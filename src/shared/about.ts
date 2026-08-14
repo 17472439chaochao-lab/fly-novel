@@ -6,6 +6,11 @@ export const APP_ABOUT = {
   qq: '17472439',
   email: '17472439chaochao@gmail.com',
   repo: 'https://gitee.com/wucc513721/fly-novel',
+  /** Gitee 仓库路径，用于 Releases 版本检查 */
+  giteeOwner: 'wucc513721',
+  giteeRepo: 'fly-novel',
+  /** 发行版列表页（无最新版 API 时的兜底打开地址） */
+  releasesUrl: 'https://gitee.com/wucc513721/fly-novel/releases',
   license: 'MIT',
   tagline: '轻量小说阅读器 · 支持 Legado 书源',
   features:

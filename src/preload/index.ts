@@ -10,6 +10,7 @@ import type {
   ShelfBook,
   SourceTestResult
 } from '../shared/types'
+import type { UpdateCheckResult } from '../shared/updateCheck'
 
 export type { SearchProgress }
 
@@ -25,6 +26,18 @@ export type SourceTestProgress = {
 const api = {
   /** 获取应用完整初始状态（书源、书架、设置、偏好等） */
   getState: () => ipcRenderer.invoke('app:getState'),
+  /** 获取当前应用版本号 */
+  getVersion: () => ipcRenderer.invoke('app:getVersion') as Promise<string>,
+  /**
+   * 检查 Gitee 发行版是否有新版本（仅提示，不自动安装）
+   */
+  checkUpdate: () => ipcRenderer.invoke('app:checkUpdate') as Promise<UpdateCheckResult>,
+  /**
+   * 用系统默认浏览器打开外链
+   * @param url http(s) 地址
+   */
+  openExternal: (url: string) =>
+    ipcRenderer.invoke('app:openExternal', url) as Promise<{ ok: boolean; message?: string }>,
   sources: {
     /** 列出全部书源 */
     list: () => ipcRenderer.invoke('sources:list') as Promise<BookSource[]>,

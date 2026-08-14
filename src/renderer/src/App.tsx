@@ -147,6 +147,35 @@ export default function App() {
     })()
   }, [])
 
+  /** 启动后静默检查更新：仅在有新版本时提示 */
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await window.fly.checkUpdate()
+          if (cancelled || result.status !== 'available') return
+          const action = await askConfirm({
+            title: '发现新版本',
+            message: `当前 v${result.currentVersion}，最新 v${result.latestVersion}。是否打开发行版页面下载？`,
+            confirmText: '前往下载',
+            cancelText: '稍后'
+          })
+          if (action === 'confirm') {
+            const open = await window.fly.openExternal(result.releaseUrl)
+            if (!open.ok) showToast(open.message || '无法打开链接')
+          }
+        } catch {
+          /* 启动检查失败时静默忽略 */
+        }
+      })()
+    }, 2800)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [askConfirm, showToast])
+
   /**
    * 导出指定书籍为 TXT 文件并刷新书架
    * @param bookId 书籍 ID
@@ -1167,7 +1196,9 @@ export default function App() {
               }}
             />
           )}
-          {view === 'about' && <AboutView />}
+          {view === 'about' && (
+            <AboutView showToast={showToast} askConfirm={askConfirm} />
+          )}
         </div>
       </section>
       {toast ? <div className="toast">{toast}</div> : null}

@@ -188,8 +188,6 @@ npx electron-builder --mac --win --linux
 | jsonpath-plus | JSONPath | MIT |
 | iconv-lite | 编码转换 | MIT |
 
-应用内：**设置 → 关于** 亦可查看作者与组件列表。菜单栏 **FlyNovel → 关于 FlyNovel** 显示系统关于面板。
-
 ---
 
 ## 书源兼容说明

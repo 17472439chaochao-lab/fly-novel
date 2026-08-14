@@ -18,6 +18,7 @@ import { matchChapterIndex } from '../shared/matchChapter'
 import { importLocalBookDialogAsync } from './localBooks/importLocal'
 import { exportShelfBookToTxt } from './localBooks/exportTxt'
 import { listSystemFontFamilies } from './systemFonts'
+import { checkGiteeUpdate } from './updateCheck'
 
 const APP_NAME = APP_ABOUT.name
 /** 固定用户数据目录名，避免 productName 变更导致迁移 userData。 */
@@ -1011,6 +1012,24 @@ function registerIpc(): void {
     const result = registerBossKeyFromPrefs()
     return { prefs: next, bossKey: result }
   })
+
+  // 轻量检查更新：对比 Gitee Releases 最新版本
+  ipcMain.handle('app:checkUpdate', async () => {
+    return checkGiteeUpdate(app.getVersion())
+  })
+
+  // 用系统浏览器打开外链（发行版下载页等）
+  ipcMain.handle('app:openExternal', async (_e, url: string) => {
+    const target = typeof url === 'string' ? url.trim() : ''
+    if (!target || !/^https?:\/\//i.test(target)) {
+      return { ok: false as const, message: '无效链接' }
+    }
+    await shell.openExternal(target)
+    return { ok: true as const }
+  })
+
+  // 当前运行版本（打包后为 package.json version）
+  ipcMain.handle('app:getVersion', () => app.getVersion())
 }
 
 /**
