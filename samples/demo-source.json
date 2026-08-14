@@ -1,0 +1,38 @@
+[
+  {
+    "bookSourceComment": "本地演示书源：指向静态 HTML，用于无网络验证解析流程",
+    "bookSourceGroup": "演示",
+    "bookSourceName": "FlyNovel Demo",
+    "bookSourceType": 0,
+    "bookSourceUrl": "https://example.com",
+    "customOrder": 0,
+    "enabled": true,
+    "enabledExplore": false,
+    "lastUpdateTime": 0,
+    "respondTime": 180000,
+    "searchUrl": "/search?q={{key}}",
+    "ruleSearch": {
+      "bookList": ".book-item",
+      "name": ".title@text",
+      "author": ".author@text",
+      "bookUrl": "a@href",
+      "coverUrl": "img@src",
+      "intro": ".intro@text",
+      "lastChapter": ".last@text"
+    },
+    "ruleBookInfo": {
+      "name": "h1@text",
+      "author": ".author@text",
+      "intro": ".intro@text",
+      "tocUrl": ""
+    },
+    "ruleToc": {
+      "chapterList": "#list li",
+      "chapterName": "a@text",
+      "chapterUrl": "a@href"
+    },
+    "ruleContent": {
+      "content": "#content@html"
+    }
+  }
+]

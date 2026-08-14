@@ -1,0 +1,84 @@
+{
+  "name": "fly-novel",
+  "productName": "FlyNovel",
+  "version": "1.0.0",
+  "description": "轻量小说阅读器，支持本地 TXT/EPUB、在线搜索阅读与导出，兼容 Legado 书源",
+  "main": "./out/main/index.js",
+  "author": "飞鸟传说 <17472439chaochao@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "dist": "npm run build && electron-builder --mac",
+    "dist:dir": "npm run build && electron-builder --mac --dir",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "postinstall": "node scripts/ensure-electron.js && electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.8",
+    "better-sqlite3": "^11.8.1",
+    "cheerio": "^1.0.0",
+    "font-list": "^2.1.0",
+    "iconv-lite": "^0.6.3",
+    "jsonpath-plus": "^10.3.0",
+    "jszip": "^3.10.1",
+    "xpath": "^0.0.34"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^34.5.8",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.flynovel.app",
+    "productName": "FlyNovel",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "icon": "build/icon.png",
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": null
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png"
+    },
+    "files": [
+      "out/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/font-list/**/*"
+    ]
+  }
+}
