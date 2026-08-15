@@ -18,6 +18,7 @@ import {
 import { ConfirmDialog, type ConfirmOutcome, type ConfirmRequest } from './components/ConfirmDialog'
 import { IconClose, LoadingIcon } from './components/icons'
 import { SidebarMotto } from './components/SidebarMotto'
+import { useEyeCareReminder } from './hooks/useEyeCareReminder'
 import { AboutView } from './views/AboutView'
 import { ReaderView } from './views/ReaderView'
 import { SearchView } from './views/SearchView'
@@ -118,6 +119,15 @@ export default function App() {
       return null
     })
   }, [])
+
+  /** 护眼提醒：阅读累计时长，老板键隐藏时不计时也不弹窗 */
+  useEyeCareReminder({
+    enabled: Boolean(prefs.eyeCareEnabled),
+    intervalMinutes: prefs.eyeCareIntervalMinutes ?? 120,
+    readingActive: view === 'reader' && !!reading,
+    askConfirm,
+    dismissConfirm: () => closeConfirm('cancel')
+  })
 
   /**
    * 切换主界面视图；非阅读页时持久化 lastView
@@ -1010,6 +1020,7 @@ export default function App() {
           }}
         />
         {toast ? <div className="toast">{toast}</div> : null}
+        {confirmReq ? <ConfirmDialog request={confirmReq} onClose={closeConfirm} /> : null}
       </>
     )
   }

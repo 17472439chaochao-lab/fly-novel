@@ -1,4 +1,5 @@
 import {
+  clampEyeCareIntervalMinutes,
   clampRequestConcurrency,
   DEFAULT_PREFS,
   DEFAULT_SETTINGS,
@@ -292,7 +293,12 @@ export function getPrefs(): AppPrefs {
         : DEFAULT_PREFS.bossKey,
     preloadCount: preload,
     requestConcurrency: clampRequestConcurrency(raw.requestConcurrency),
-    shelfSort: raw.shelfSort === 'added' ? 'added' : 'lastRead'
+    shelfSort: raw.shelfSort === 'added' ? 'added' : 'lastRead',
+    eyeCareEnabled:
+      typeof raw.eyeCareEnabled === 'boolean' ? raw.eyeCareEnabled : DEFAULT_PREFS.eyeCareEnabled,
+    eyeCareIntervalMinutes: clampEyeCareIntervalMinutes(
+      raw.eyeCareIntervalMinutes ?? DEFAULT_PREFS.eyeCareIntervalMinutes
+    )
   }
 }
 
@@ -310,7 +316,9 @@ export function savePrefs(prefs: AppPrefs): AppPrefs {
     bossKey: prefs.bossKey.trim() || DEFAULT_PREFS.bossKey,
     preloadCount: Math.max(0, Math.min(20, Math.round(prefs.preloadCount ?? DEFAULT_PREFS.preloadCount))),
     requestConcurrency: clampRequestConcurrency(prefs.requestConcurrency),
-    shelfSort: prefs.shelfSort === 'added' ? 'added' : 'lastRead'
+    shelfSort: prefs.shelfSort === 'added' ? 'added' : 'lastRead',
+    eyeCareEnabled: Boolean(prefs.eyeCareEnabled),
+    eyeCareIntervalMinutes: clampEyeCareIntervalMinutes(prefs.eyeCareIntervalMinutes)
   }
   writeSettingJson('app', next)
   return next

@@ -359,6 +359,48 @@ export interface AppPrefs {
   requestConcurrency: number
   /** 书架列表排序（均为降序）。默认：最近阅读 */
   shelfSort: ShelfSort
+  /** 是否启用护眼 / 久坐提醒（仅阅读页累计时长） */
+  eyeCareEnabled: boolean
+  /** 连续阅读多久后提醒（分钟） */
+  eyeCareIntervalMinutes: number
+}
+
+/** 护眼提醒可选间隔（分钟） */
+export const EYE_CARE_INTERVAL_OPTIONS = [
+  { value: 1, label: '1 分钟' },
+  { value: 30, label: '30 分钟' },
+  { value: 60, label: '1 小时' },
+  { value: 120, label: '2 小时' },
+  { value: 300, label: '5 小时' },
+  { value: 600, label: '10 小时' }
+] as const
+
+/**
+ * 将护眼间隔钳制为可选分钟数之一。
+ * @param value 原始分钟数
+ */
+export function clampEyeCareIntervalMinutes(value: unknown): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 120
+  const allowed: number[] = EYE_CARE_INTERVAL_OPTIONS.map((o) => o.value)
+  if (allowed.includes(n)) return n
+  let best = allowed[0]
+  let bestDist = Math.abs(n - best)
+  for (const v of allowed) {
+    const d = Math.abs(n - v)
+    if (d < bestDist) {
+      best = v
+      bestDist = d
+    }
+  }
+  return best
+}
+
+/**
+ * 护眼间隔对应的毫秒数。
+ * @param minutes 偏好中的分钟数
+ */
+export function eyeCareIntervalMs(minutes: number): number {
+  return Math.max(1, minutes) * 60 * 1000
 }
 
 /** 全局请求并发安全上下限（避免站点限流） */
@@ -404,7 +446,9 @@ export const DEFAULT_PREFS: AppPrefs = {
   bossKey: 'CommandOrControl+Shift+H',
   preloadCount: 3,
   requestConcurrency: REQUEST_CONCURRENCY_DEFAULT,
-  shelfSort: 'lastRead'
+  shelfSort: 'lastRead',
+  eyeCareEnabled: true,
+  eyeCareIntervalMinutes: 120
 }
 
 /** 多源搜索进度事件 */

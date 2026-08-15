@@ -191,6 +191,9 @@ function toggleBossVisibility(): void {
     if (process.platform === 'darwin') app.dock?.hide()
     bossHidden = true
   }
+  if (!win.isDestroyed()) {
+    win.webContents.send('app:boss-visibility', { hidden: bossHidden })
+  }
 }
 
 /**

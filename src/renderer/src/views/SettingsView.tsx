@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  EYE_CARE_INTERVAL_OPTIONS,
   REQUEST_CONCURRENCY_MAX,
   REQUEST_CONCURRENCY_MIN,
   type AppPrefs,
@@ -9,8 +10,7 @@ import { IconTrash } from '../components/icons'
 import { eventToAccelerator, formatBossKeyLabel } from '../utils/bossKey'
 
 /**
- * 设置页：配置老板键、阅读预加载章节数、网络并发数，
- * 以及管理正文净化规则列表。
+ * 设置页：老板键、护眼提醒、阅读预加载、网络并发与正文净化规则。
  */
 export function SettingsView({
   settings,
@@ -90,6 +90,43 @@ export function SettingsView({
             {recordingBossKey ? '请按下组合键…' : bossLabel || '点击设置'}
           </button>
           <p className="field-hint">点击上方区域后按下组合键（需含 Ctrl / ⌘ / Alt / Shift），Esc 取消</p>
+        </div>
+      </div>
+
+      <div className="panel-head" style={{ marginTop: 28 }}>
+        <div>
+          <h2>护眼提醒</h2>
+          <p>连续阅读达到设定时长后提示休息；老板键隐藏时不计时、不弹窗</p>
+        </div>
+      </div>
+      <div className="settings-form">
+        <div className="field row-field">
+          <label>启用护眼提醒</label>
+          <button
+            type="button"
+            className={`switch ${prefs.eyeCareEnabled ? 'on' : ''}`}
+            onClick={() => void onPrefsChange({ eyeCareEnabled: !prefs.eyeCareEnabled })}
+          >
+            <i />
+          </button>
+        </div>
+        <div className="field">
+          <label>提醒间隔</label>
+          <select
+            value={prefs.eyeCareIntervalMinutes ?? 120}
+            disabled={!prefs.eyeCareEnabled}
+            onChange={(e) =>
+              void onPrefsChange({ eyeCareIntervalMinutes: Number(e.target.value) })
+            }
+            aria-label="护眼提醒间隔"
+          >
+            {EYE_CARE_INTERVAL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <p className="field-hint">仅在阅读页累计时长；离开阅读或隐藏窗口时暂停</p>
         </div>
       </div>
 

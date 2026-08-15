@@ -1,7 +1,7 @@
 {
   "name": "fly-novel",
   "productName": "FlyNovel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "轻量小说阅读器，支持本地 TXT/EPUB、在线搜索阅读与导出，兼容 Legado 书源",
   "main": "./out/main/index.js",
   "author": "飞鸟传说 <17472439chaochao@gmail.com>",

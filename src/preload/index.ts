@@ -316,6 +316,18 @@ const api = {
         prefs: AppPrefs
         bossKey: { ok: boolean; message: string }
       }>
+  },
+  /**
+   * 订阅老板键隐藏/显示状态（隐藏时不计时、不弹护眼提醒）
+   * @param cb 回调；hidden 为 true 表示已老板键隐藏
+   * @returns 取消订阅函数
+   */
+  onBossVisibility: (cb: (payload: { hidden: boolean }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { hidden: boolean }) => cb(payload)
+    ipcRenderer.on('app:boss-visibility', listener)
+    return () => {
+      ipcRenderer.removeListener('app:boss-visibility', listener)
+    }
   }
 }
 
