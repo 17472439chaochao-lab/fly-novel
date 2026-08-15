@@ -178,7 +178,9 @@ export function SettingsView({
       <div className="panel-head" style={{ marginTop: 28 }}>
         <div>
           <h2>正文净化</h2>
-          <p>阅读页选中文字后右键即可添加；字号与主题请在阅读页设置</p>
+          <p>
+            已内置剔除正文中的广告链接：http(s)://、www./m. 域名，以及不带 www 但带路径的裸域名（如 site.com/a/123.html）。阅读页选中文字后右键可追加自定义规则
+          </p>
         </div>
       </div>
       {!rules.length ? (
