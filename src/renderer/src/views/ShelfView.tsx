@@ -14,6 +14,7 @@ import {
   SearchIcon
 } from '../components/icons'
 import { cacheLabel } from '../utils/cacheLabel'
+import { formatLastReadLabel } from '../utils/formatLastRead'
 
 /**
  * 书架页：展示书籍列表（可排序），并提供打开、导入本地、
@@ -145,6 +146,7 @@ export function ShelfView({
                         ? ` · 读到 ${Math.min(b.chapterIndex + 1, b.chapters.length)}/${b.chapters.length}`
                         : ''}
                     </p>
+                    <p className="shelf-last-read">{formatLastReadLabel(b.lastReadAt)}</p>
                     {b.lastChapter ? <p className="muted">最新：{b.lastChapter}</p> : null}
                   </div>
                 </button>

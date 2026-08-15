@@ -17,6 +17,7 @@ import {
 } from '../../shared/types'
 import { ConfirmDialog, type ConfirmOutcome, type ConfirmRequest } from './components/ConfirmDialog'
 import { IconClose, LoadingIcon } from './components/icons'
+import { SidebarMotto } from './components/SidebarMotto'
 import { AboutView } from './views/AboutView'
 import { ReaderView } from './views/ReaderView'
 import { SearchView } from './views/SearchView'
@@ -1039,6 +1040,7 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <SidebarMotto />
       </aside>
 
       <section className="main">
