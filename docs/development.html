@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlyNovel 开发文档</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f6f8fa;
+    --bg-code: #f0f2f5;
+    --text: #1a1a2e;
+    --text-soft: #555;
+    --text-muted: #888;
+    --primary: #4f46e5;
+    --primary-light: #eef2ff;
+    --border: #e1e4e8;
+    --green: #16a34a;
+    --green-light: #f0fdf4;
+    --orange: #ea580c;
+    --orange-light: #fff7ed;
+    --red: #dc2626;
+    --red-light: #fef2f2;
+    --blue: #2563eb;
+    --blue-light: #eff6ff;
+    --radius: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.75;
+    font-size: 15px;
+  }
+  .layout { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .sidebar-brand {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .sidebar-brand h2 { font-size: 18px; color: var(--primary); }
+  .sidebar-brand p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .sidebar nav { padding: 0 12px; }
+  .sidebar nav a {
+    display: block;
+    padding: 6px 12px;
+    color: var(--text-soft);
+    text-decoration: none;
+    font-size: 13px;
+    border-radius: 6px;
+    transition: all .15s;
+  }
+  .sidebar nav a:hover { background: var(--primary-light); color: var(--primary); }
+  .sidebar nav a.sub { padding-left: 28px; font-size: 12px; color: var(--text-muted); }
+
+  /* Main */
+  .main { margin-left: 260px; flex: 1; padding: 0; }
+  .content { max-width: 880px; margin: 0 auto; padding: 40px 48px 80px; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    color: #fff;
+    padding: 56px 48px;
+    border-radius: 0 0 24px 24px;
+    margin-bottom: 40px;
+  }
+  .hero h1 { font-size: 32px; margin-bottom: 8px; }
+  .hero p { font-size: 16px; opacity: .95; color: #fff; }
+  .hero .meta { display: flex; gap: 24px; margin-top: 20px; flex-wrap: wrap; }
+  .hero .meta span { font-size: 13px; background: rgba(255,255,255,.15); padding: 4px 12px; border-radius: 20px; }
+
+  /* Sections */
+  section { margin-bottom: 48px; scroll-margin-top: 20px; }
+  h2 {
+    font-size: 24px;
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h2 .icon { font-size: 20px; }
+  h3 { font-size: 18px; margin: 24px 0 12px; color: var(--text); }
+  h4 { font-size: 15px; margin: 16px 0 8px; color: var(--primary); }
+  p { margin-bottom: 10px; color: var(--text); }
+  ul, ol { margin: 8px 0 16px 20px; }
+  li { margin-bottom: 4px; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  strong { color: var(--text); font-weight: 600; }
+
+  /* Code */
+  code {
+    font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
+    background: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--red);
+  }
+  pre {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: 16px 20px;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 12px 0;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: 13px; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: var(--bg-soft);
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: var(--bg-soft); }
+
+  /* Cards */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin: 16px 0; }
+  .card {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card h4 { margin-top: 0; }
+  .card p { font-size: 13px; color: var(--text-soft); margin-bottom: 0; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .badge-purple { background: var(--primary-light); color: var(--primary); }
+  .badge-green { background: var(--green-light); color: var(--green); }
+  .badge-orange { background: var(--orange-light); color: var(--orange); }
+  .badge-blue { background: var(--blue-light); color: var(--blue); }
+
+  /* Callout */
+  .callout {
+    background: var(--blue-light);
+    border-left: 4px solid var(--blue);
+    padding: 12px 16px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .callout.warn { background: var(--orange-light); border-color: var(--orange); }
+  .callout.tip { background: var(--green-light); border-color: var(--green); }
+
+  /* Tree */
+  .tree {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    font-family: "SF Mono", monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text-soft);
+  }
+  .tree .dir { color: var(--primary); font-weight: 600; }
+  .tree .file { color: var(--text-soft); }
+  .tree .desc { color: var(--text-muted); }
+
+  /* Flowchart */
+  .flow { display: flex; flex-direction: column; gap: 0; margin: 16px 0; }
+  .flow-step {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    position: relative;
+    font-size: 14px;
+  }
+  .flow-step .step-title { font-weight: 600; color: var(--primary); }
+  .flow-step .step-desc { font-size: 13px; color: var(--text-soft); margin-top: 2px; }
+  .flow-arrow { text-align: center; color: var(--text-muted); font-size: 18px; line-height: 1; margin: 2px 0; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; }
+    .content { padding: 24px 20px 60px; }
+    .hero { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <h2>FlyNovel</h2>
+      <p>开发文档 v1.0.0</p>
+    </div>
+    <nav>
+      <a href="#overview">1. 项目概览</a>
+      <a href="#architecture">2. 架构设计</a>
+      <a href="#structure">3. 目录结构</a>
+      <a href="#main">4. 主进程模块</a>
+      <a href="#main-entry" class="sub">4.1 入口与窗口</a>
+      <a href="#main-db" class="sub">4.2 数据库层</a>
+      <a href="#main-store" class="sub">4.3 数据持久化</a>
+      <a href="#main-engine" class="sub">4.4 书源引擎</a>
+      <a href="#main-local" class="sub">4.5 本地文件解析</a>
+      <a href="#preload">5. Preload 桥接</a>
+      <a href="#renderer">6. 渲染进程</a>
+      <a href="#ipc">7. IPC 通信</a>
+      <a href="#database">8. 数据库设计</a>
+      <a href="#types">9. 类型定义</a>
+      <a href="#build">10. 构建与部署</a>
+      <a href="#dev">11. 开发指南</a>
+      <a href="#faq">12. 常见问题</a>
+      <a href="#changelog">13. 更新记录</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+  <div class="content">
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>FlyNovel 开发文档</h1>
+    <p>轻量桌面小说阅读器 — 支持 Legado 书源、本地 TXT/EPUB、离线缓存</p>
+    <div class="meta">
+      <span>Electron 34</span>
+      <span>React 18</span>
+      <span>TypeScript 5.7</span>
+      <span>MIT License</span>
+      <span>作者：飞鸟传说</span>
+    </div>
+  </div>
+
+  <!-- 1. 项目概览 -->
+  <section id="overview">
+    <h2><span class="icon">📋</span> 1. 项目概览</h2>
+
+    <p>FlyNovel 是一款基于 Electron 的跨平台桌面小说阅读器，核心特性包括：</p>
+    <ul>
+      <li><strong>书源兼容</strong>：导入 Legado（阅读 App）文本书源，支持 CSS / XPath / JSONPath 规则解析</li>
+      <li><strong>多源搜索</strong>：多书源并发搜索，流式返回结果，支持书源匹配质量学习排序</li>
+      <li><strong>本地阅读</strong>：打开本地 TXT / EPUB 文件，自动编码检测与章节切分</li>
+      <li><strong>离线缓存</strong>：章节正文存入 SQLite，断网可读已缓存章节；支持整本缓存与导出 TXT</li>
+      <li><strong>阅读体验</strong>：纸感 / 护眼 / 夜间三主题，系统字体选择，字号 / 行距 / 版心可调</li>
+      <li><strong>实用功能</strong>：老板键一键隐藏、自动滚屏、正文净化规则、护眼/久坐提醒、版本更新检查</li>
+      <li><strong>贴心细节</strong>：书架显示上次阅读时间、侧栏底部每 5 分钟轮换阅读短句</li>
+    </ul>
+
+    <h3>技术栈</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>层级</th><th>技术</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>桌面运行时</td><td>Electron 34</td><td>跨平台桌面壳，主进程 + 渲染进程隔离</td></tr>
+          <tr><td>UI 框架</td><td>React 18 + TypeScript</td><td>函数组件 + Hooks，无路由库（自管理 view 状态）</td></tr>
+          <tr><td>构建工具</td><td>Vite 5 / electron-vite 2</td><td>三段式构建（main / preload / renderer）</td></tr>
+          <tr><td>打包工具</td><td>electron-builder 25</td><td>macOS (dmg/zip)、Windows (nsis/zip)、Linux (AppImage/deb)</td></tr>
+          <tr><td>本地存储</td><td>better-sqlite3 11</td><td>同步 SQLite，WAL 模式，原生模块需与 Electron ABI 匹配</td></tr>
+          <tr><td>HTML 解析</td><td>cheerio</td><td>CSS 选择器解析书源规则</td></tr>
+          <tr><td>XML/XPath</td><td>@xmldom/xmldom + xpath</td><td>XPath 规则解析</td></tr>
+          <tr><td>JSONPath</td><td>jsonpath-plus</td><td>JSON 格式书源规则解析</td></tr>
+          <tr><td>编码转换</td><td>iconv-lite</td><td>GBK / GB2312 / Big5 等中文编码解码</td></tr>
+          <tr><td>EPUB 解压</td><td>jszip</td><td>EPUB 本质是 ZIP，解压后解析 OPF / XHTML</td></tr>
+          <tr><td>系统字体</td><td>font-list</td><td>枚举操作系统可用字体族</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>项目信息</h3>
+    <div class="card-grid">
+      <div class="card"><h4> appId</h4><p><code>com.flynovel.app</code></p></div>
+      <div class="card"><h4>数据目录</h4><p><code>~/Library/Application Support/fly-novel/</code></p></div>
+      <div class="card"><h4>源码仓库</h4><p><a href="https://gitee.com/wucc513721/fly-novel">gitee.com/wucc513721/fly-novel</a></p></div>
+      <div class="card"><h4>许可证</h4><p>MIT (开源)</p></div>
+    </div>
+  </section>
+
+  <!-- 2. 架构设计 -->
+  <section id="architecture">
+    <h2><span class="icon">🏗️</span> 2. 架构设计</h2>
+
+    <p>FlyNovel 采用 Electron 标准的三进程架构，严格遵循 <strong>contextIsolation + preload 桥接</strong>安全模型：</p>
+
+    <pre><code>┌─────────────────────────────────────────────────────┐
+│                    Electron App                      │
+│                                                      │
+│  ┌──────────────┐   IPC    ┌──────────────────────┐ │
+│  │  Main Process │◄────────►│  Renderer Process    │ │
+│  │               │  handle  │                      │ │
+│  │  · 窗口管理    │  send    │  React UI            │ │
+│  │  · SQLite DB  │          │  · ShelfView         │ │
+│  │  · 书源引擎    │          │  · SearchView        │ │
+│  │  · HTTP 请求   │          │  · ReaderView        │ │
+│  │  · 本地文件    │          │  · SourcesView       │ │
+│  │  · 全局快捷键  │          │  · SettingsView      │ │
+│  └──────┬───────┘          └──────────▲───────────┘ │
+│         │                             │              │
+│         │         ┌───────────────────┘              │
+│         │         │ contextBridge                     │
+│         │         ▼                                  │
+│         │   ┌─────────────┐                          │
+│         └──►│  Preload    │◄─── window.fly API       │
+│             │  (isolated) │                          │
+│             └─────────────┘                          │
+└─────────────────────────────────────────────────────┘</code></pre>
+
+    <h3>核心设计原则</h3>
+    <ul>
+      <li><strong>进程隔离</strong>：主进程负责所有 Node.js / 原生能力（数据库、HTTP、文件系统），渲染进程仅通过 <code>window.fly</code> API 调用，无法直接访问 Node</li>
+      <li><strong>共享类型</strong>：<code>src/shared/</code> 目录的代码同时被主进程和渲染进程引用，确保类型一致性</li>
+      <li><strong>单一 SQLite</strong>：所有持久化数据（书源、书架、设置、章节缓存）存储在同一个 <code>fly-novel.sqlite</code> 文件中</li>
+      <li><strong>事件驱动通信</strong>：耗时操作（搜索、测试、缓存）通过 <code>ipcMain.handle</code> + <code>sender.send</code> 进度事件实现流式更新</li>
+    </ul>
+
+    <h3>数据流示意</h3>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="step-title">用户操作（渲染进程）</div>
+        <div class="step-desc">点击搜索 / 打开书籍 / 修改设置 → 调用 <code>window.fly.xxx()</code></div>
+      </div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">
+        <div class="step-title">Preload 桥接</div>
+        <div class="step-desc"><code>ipcRenderer.invoke('channel', ...args)</code> → 主进程</div>
+      </div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">
+        <div class="step-title">主进程 IPC Handler</div>
+        <div class="step-desc">路由到 store.ts（数据库 CRUD）或 engine.ts（书源解析）或 localBooks/（本地文件）</div>
+      </div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">
+        <div class="step-title">业务逻辑执行</div>
+        <div class="step-desc">HTTP 请求 → 规则解析 → 数据库写入 → 返回结果 / 推送进度事件</div>
+      </div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">
+        <div class="step-title">渲染进程更新</div>
+        <div class="step-desc">Promise resolve 收到结果 / <code>onXxxProgress</code> 回调更新 UI</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 目录结构 -->
+  <section id="structure">
+    <h2><span class="icon">📁</span> 3. 目录结构</h2>
+
+<div class="tree"><span class="dir">novel/</span>
+├── <span class="file">package.json</span>                      <span class="desc"># 项目配置、依赖、构建脚本</span>
+├── <span class="file">electron.vite.config.ts</span>           <span class="desc"># electron-vite 三段式构建配置</span>
+├── <span class="file">tsconfig.json</span>                     <span class="desc"># 根 TS 配置（引用 node + web）</span>
+├── <span class="file">tsconfig.node.json</span>                <span class="desc"># 主进程 + preload TS 配置</span>
+├── <span class="file">tsconfig.web.json</span>                 <span class="desc"># 渲染进程 + shared TS 配置</span>
+├── <span class="dir">build/</span>                             <span class="desc"># 打包资源（图标）</span>
+│   ├── <span class="file">icon.png</span>
+│   └── <span class="file">icon.icns</span>
+├── <span class="dir">scripts/</span>                           <span class="desc"># 辅助脚本</span>
+│   ├── <span class="file">ensure-electron.js</span>            <span class="desc"># postinstall：确保 Electron 二进制可用</span>
+│   └── <span class="file">smoke-rules.ts</span>               <span class="desc"># 书源规则解析自检脚本</span>
+├── <span class="dir">src/</span>
+│   ├── <span class="dir">main/</span>                          <span class="desc"># ═══ 主进程 ═══</span>
+│   │   ├── <span class="file">index.ts</span>                  <span class="desc"># 入口：窗口、菜单、IPC 注册、生命周期</span>
+│   │   ├── <span class="file">db.ts</span>                     <span class="desc"># SQLite 初始化、建表、迁移</span>
+│   │   ├── <span class="file">store.ts</span>                  <span class="desc"># 数据 CRUD：书源/书架/设置/历史</span>
+│   │   ├── <span class="file">chapterDb.ts</span>              <span class="desc"># 章节缓存读写</span>
+│   │   ├── <span class="file">asyncPool.ts</span>              <span class="desc"># 并发池与超时工具</span>
+│   │   ├── <span class="file">utils.ts</span>                  <span class="desc"># 环境判断、开发者工具</span>
+│   │   ├── <span class="file">systemFonts.ts</span>            <span class="desc"># 系统字体枚举</span>
+│   │   ├── <span class="file">updateCheck.ts</span>            <span class="desc"># Gitee Releases 版本检查</span>
+│   │   ├── <span class="dir">legado/</span>                    <span class="desc"># ── Legado 书源引擎 ──</span>
+│   │   │   ├── <span class="file">engine.ts</span>             <span class="desc"># 搜索/详情/目录/正文解析流程</span>
+│   │   │   ├── <span class="file">http.ts</span>               <span class="desc"># HTTP 请求、编码检测、URL 解析</span>
+│   │   │   └── <span class="file">analyzeRule.ts</span>        <span class="desc"># 规则分析器（CSS/XPath/JSON/正则）</span>
+│   │   └── <span class="dir">localBooks/</span>                <span class="desc"># ── 本地文件解析 ──</span>
+│   │       ├── <span class="file">importLocal.ts</span>        <span class="desc"># 导入入口（TXT/EPUB 分派）</span>
+│   │       ├── <span class="file">txtSplit.ts</span>           <span class="desc"># TXT 编码检测与章节切分</span>
+│   │       ├── <span class="file">epubParse.ts</span>          <span class="desc"># EPUB 解压与解析</span>
+│   │       └── <span class="file">exportTxt.ts</span>          <span class="desc"># 导出书架书籍为 TXT</span>
+│   ├── <span class="dir">preload/</span>
+│   │   └── <span class="file">index.ts</span>                  <span class="desc"># IPC 桥接：contextBridge → window.fly</span>
+│   ├── <span class="dir">renderer/</span>                      <span class="desc"># ═══ 渲染进程 ═══</span>
+│   │   ├── <span class="file">index.html</span>                <span class="desc"># HTML 入口（含 CSP 策略）</span>
+│   │   └── <span class="dir">src/</span>
+│   │       ├── <span class="file">main.tsx</span>              <span class="desc"># React 渲染入口</span>
+│   │       ├── <span class="file">App.tsx</span>               <span class="desc"># 根组件：全局状态与 IPC 调度</span>
+│   │       ├── <span class="file">styles.css</span>            <span class="desc"># 全局样式</span>
+│   │       ├── <span class="file">env.d.ts</span>              <span class="desc"># window.fly 类型声明</span>
+│   │       ├── <span class="dir">views/</span>                 <span class="desc"># ── 页面视图 ──</span>
+│   │       │   ├── <span class="file">ShelfView.tsx</span>     <span class="desc"># 书架页</span>
+│   │       │   ├── <span class="file">SearchView.tsx</span>    <span class="desc"># 搜书页</span>
+│   │       │   ├── <span class="file">SourcesView.tsx</span>   <span class="desc"># 书源管理页</span>
+│   │       │   ├── <span class="file">ReaderView.tsx</span>    <span class="desc"># 阅读页</span>
+│   │       │   ├── <span class="file">SettingsView.tsx</span>  <span class="desc"># 设置页</span>
+│   │       │   └── <span class="file">AboutView.tsx</span>     <span class="desc"># 关于页</span>
+│   │       ├── <span class="dir">components/</span>            <span class="desc"># ── 可复用组件 ──</span>
+│   │       │   ├── <span class="file">VirtualList.tsx</span>   <span class="desc"># 虚拟列表（固定行高）</span>
+│   │       │   ├── <span class="file">ConfirmDialog.tsx</span> <span class="desc"># 通用确认对话框</span>
+│   │       │   ├── <span class="file">ShelfCover.tsx</span>    <span class="desc"># 书架封面</span>
+│   │       │   ├── <span class="file">SidebarMotto.tsx</span>  <span class="desc"># 侧栏底部阅读短句（5 分钟轮换）</span>
+│   │       │   └── <span class="file">icons.tsx</span>         <span class="desc"># SVG 图标集</span>
+│   │       ├── <span class="dir">hooks/</span>                 <span class="desc"># ── 自定义 Hooks ──</span>
+│   │       │   └── <span class="file">useEyeCareReminder.ts</span> <span class="desc"># 护眼/久坐提醒计时</span>
+│   │       └── <span class="dir">utils/</span>                 <span class="desc"># ── 渲染进程工具 ──</span>
+│   │           ├── <span class="file">bossKey.ts</span>        <span class="desc"># 老板键 accelerator 转换</span>
+│   │           ├── <span class="file">shelfMatch.ts</span>     <span class="desc"># 书架去重/换源匹配</span>
+│   │           ├── <span class="file">cacheLabel.ts</span>     <span class="desc"># 缓存状态徽章</span>
+│   │           ├── <span class="file">formatLastRead.ts</span> <span class="desc"># 上次阅读相对时间文案</span>
+│   │           └── <span class="file">sidebarMottos.ts</span>  <span class="desc"># 侧栏阅读短句库</span>
+│   └── <span class="dir">shared/</span>                       <span class="desc"># ═══ 共享代码 ═══</span>
+│       ├── <span class="file">types.ts</span>                  <span class="desc"># 核心类型、常量、排序算法</span>
+│       ├── <span class="file">about.ts</span>                  <span class="desc"># 应用身份信息</span>
+│       ├── <span class="file">searchRelevance.ts</span>        <span class="desc"># 搜索相关度算法</span>
+│       ├── <span class="file">novelText.ts</span>              <span class="desc"># 正文段落整理</span>
+│       ├── <span class="file">bookLocal.ts</span>              <span class="desc"># 本地书判断</span>
+│       ├── <span class="file">matchChapter.ts</span>           <span class="desc"># 章节对齐与目录更新判断</span>
+│       ├── <span class="file">sourceValidity.ts</span>         <span class="desc"># 书源结构校验</span>
+│       ├── <span class="file">purify.ts</span>                 <span class="desc"># 正文净化规则</span>
+│       ├── <span class="file">fonts.ts</span>                  <span class="desc"># 字体工具</span>
+│       ├── <span class="file">author.ts</span>                 <span class="desc"># 作者名规范化</span>
+│       └── <span class="file">updateCheck.ts</span>            <span class="desc"># 版本比较类型</span></div>
+  </section>
+
+  <!-- 4. 主进程模块 -->
+  <section id="main">
+    <h2><span class="icon">⚙️</span> 4. 主进程模块</h2>
+
+    <h3 id="main-entry">4.1 入口与窗口管理 — <code>src/main/index.ts</code></h3>
+    <p>主进程核心入口，负责应用生命周期与所有基础设施初始化：</p>
+    <ul>
+      <li><strong>应用初始化</strong>：设置应用名 <code>FlyNovel</code>，固定 userData 目录为 <code>fly-novel</code>（避免 productName 变更导致数据迁移问题），配置系统「关于」面板</li>
+      <li><strong>窗口管理</strong>：<code>createWindow()</code> 创建主 BrowserWindow，配置 <code>titleBarStyle: 'hiddenInset'</code>、红绿灯位置 <code>{x:16,y:16}</code>，持久化窗口边界到偏好设置，拦截新窗口打开（转发给系统浏览器）</li>
+      <li><strong>主题管理</strong>：<code>applyAppTheme()</code> 按阅读主题（paper / green / night）设置 <code>nativeTheme</code> 和窗口背景色</li>
+      <li><strong>应用菜单</strong>：<code>setupAppMenu()</code> 按平台（macOS / Win / Linux）构建中文化菜单</li>
+      <li><strong>老板键</strong>：<code>toggleBossVisibility()</code> 隐藏 / 显示主窗口（同时向渲染进程广播 <code>app:boss-visibility</code> 事件），<code>registerBossKeyFromPrefs()</code> 注册全局快捷键</li>
+      <li><strong>IPC 注册</strong>：<code>registerIpc()</code> 注册全部 <code>ipcMain.handle</code> 通道</li>
+      <li><strong>生命周期</strong>：<code>app.whenReady()</code> 初始化数据库 → 确保默认配置 → 注册 IPC → 创建窗口；<code>before-quit</code> 关闭数据库；<code>will-quit</code> 注销全局快捷键</li>
+    </ul>
+
+    <h3 id="main-db">4.2 数据库层 — <code>src/main/db.ts</code></h3>
+    <p>使用 <code>better-sqlite3</code> 管理单一 SQLite 数据库文件，路径为 <code>{userData}/fly-novel.sqlite</code>。</p>
+    <p><strong>数据库特性</strong>：WAL 模式（Write-Ahead Logging）、外键约束开启、同步 API 调用。</p>
+    <p><strong>迁移机制</strong>：</p>
+    <ul>
+      <li><code>migrateFromElectronStore()</code> — 从旧版 <code>fly-novel.json</code>（electron-store 格式）迁移书源、书架、设置、搜索历史、章节缓存</li>
+      <li><code>migrateFromLegacyChaptersSqlite()</code> — 从旧版独立 <code>chapters.sqlite</code> 迁移章节缓存</li>
+    </ul>
+
+    <h3 id="main-store">4.3 数据持久化层 — <code>src/main/store.ts</code></h3>
+    <p>封装所有业务数据的 CRUD 操作，是 IPC handler 与数据库之间的业务逻辑层：</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>关键函数</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="7">书源管理</td><td><code>getSources()</code></td><td>列出全部书源（同步匹配分）</td></tr>
+          <tr><td><code>saveSources()</code></td><td>保存书源列表</td></tr>
+          <tr><td><code>importSources()</code></td><td>去重导入书源</td></tr>
+          <tr><td><code>replaceSource()</code></td><td>替换书源（URL 变更时）</td></tr>
+          <tr><td><code>patchSource()</code></td><td>局部更新书源字段</td></tr>
+          <tr><td><code>syncMatchScoresFromShelf()</code></td><td>根据书架使用量抬高匹配分</td></tr>
+          <tr><td><code>bumpSourceMatch()</code></td><td>搜索命中后更新 EMA 匹配分</td></tr>
+          <tr><td rowspan="5">书架管理</td><td><code>getShelf()</code></td><td>获取书架列表</td></tr>
+          <tr><td><code>saveShelf()</code></td><td>保存书架</td></tr>
+          <tr><td><code>upsertShelfBook()</code></td><td>插入/更新（新书插到最前）</td></tr>
+          <tr><td><code>patchShelfProgress()</code></td><td>仅更新阅读进度（轻量）</td></tr>
+          <tr><td><code>removeShelfBook()</code></td><td>移除书架书籍（含清缓存）</td></tr>
+          <tr><td rowspan="4">设置管理</td><td><code>getSettings() / saveSettings()</code></td><td>阅读器设置 CRUD</td></tr>
+          <tr><td><code>getPrefs() / savePrefs() / patchPrefs()</code></td><td>应用偏好 CRUD（含窗口边界归一化）</td></tr>
+          <tr><td><code>addPurifyRule() / removePurifyRule()</code></td><td>净化规则管理</td></tr>
+          <tr><td><code>ensureDefaultConfig()</code></td><td>首次运行写入默认配置</td></tr>
+          <tr><td>搜索历史</td><td><code>getSearchHistory() / addSearchHistory() / clearSearchHistory() / removeSearchHistory()</code></td><td>搜索历史管理（最多 20 条）</td></tr>
+          <tr><td>全局状态</td><td><code>getAppState()</code></td><td>组装渲染进程所需的完整初始状态</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="main-chapterdb">4.4 章节缓存层 — <code>src/main/chapterDb.ts</code></h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>函数</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td><code>getChapterContent(bookId, chapterUrl)</code></td><td>优先按 bookId 精确匹配，回退按 chapter_url 取最新一条</td></tr>
+          <tr><td><code>setChapterContent()</code></td><td>UPSERT 写入（支持可选 index/title 元数据）</td></tr>
+          <tr><td><code>listCachedUrls(bookId)</code></td><td>返回某书已缓存章节 URL 集合</td></tr>
+          <tr><td><code>getBookCacheInfo(bookId, chapters)</code></td><td>计算缓存概况（总数、已缓存数、状态 none/partial/full）</td></tr>
+          <tr><td><code>clearBookCache(bookId)</code></td><td>清除某书全部缓存</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="main-engine">4.5 书源引擎 — <code>src/main/legado/</code></h3>
+
+    <h4>4.5.1 引擎入口 <code>engine.ts</code></h4>
+    <p>实现 Legado 书源的完整解析流程，核心函数：</p>
+    <ul>
+      <li><code>searchBooks(source, key, page)</code> — 搜索：解析 URL 模板 → HTTP 请求 → 列表规则提取 → 逐条字段提取</li>
+      <li><code>getBookInfo(source, bookUrl)</code> — 详情：抓取详情页，按 <code>ruleBookInfo</code> 提取书名/作者/简介/目录URL 等</li>
+      <li><code>getChapterList(source, tocUrl)</code> — 目录：循环抓取目录页（最多 30 页），按 <code>ruleToc.chapterList</code> 提取章节列表，支持 <code>nextTocUrl</code> 分页</li>
+      <li><code>getContent(source, chapterUrl)</code> — 正文：循环抓取正文页（最多 20 页，去重防循环），支持 <code>sourceRegex</code> 预提取、<code>replaceRegex</code> 正则替换</li>
+      <li><code>normalizeSources(input)</code> — 规范化导入的书源 JSON（过滤非文本书源）</li>
+      <li><code>testSource(source, keyword)</code> — 实测书源可用性，返回 ok / message / found / respondMs / structuralOk</li>
+    </ul>
+
+    <div class="callout tip">
+      <strong>正文解析特殊处理</strong>：正文规则强制改为 <code>@html</code> 提取以保留 <code>&lt;br&gt;</code> / <code>&lt;p&gt;</code> 结构，再通过 <code>htmlToNovelText()</code> 转换为以空行分隔的小说段落正文。
+    </div>
+
+    <h4>4.5.2 HTTP 请求层 <code>http.ts</code></h4>
+    <ul>
+      <li><code>fetchText(url, options)</code> — 基于 <code>fetch</code> 的 HTTP 请求，使用 <code>iconv-lite</code> 按检测字符集解码，支持超时（默认 15s）、POST body、自定义 headers</li>
+      <li><code>detectCharset(contentType, buf)</code> — 从 Content-Type 头或 HTML meta 标签检测字符集</li>
+      <li><code>normalizeCharset(c)</code> — 规范化中文编码别名（gb2312 / gbk / gb18030 统一为 gbk）</li>
+      <li><code>parseRequestUrl(raw, vars)</code> — 解析 Legado URL 模板：替换 <code>{{key}}</code> / <code>{{page}}</code> 等 mustache 变量，解析 <code>{{(expr)}}</code> 表达式，识别 <code>,{...}</code> JSON 选项后缀</li>
+      <li><code>resolveUrl(base, path)</code> — 相对路径转绝对 URL</li>
+    </ul>
+
+    <h4>4.5.3 规则分析器 <code>analyzeRule.ts</code></h4>
+    <p>支持 Legado 书源的多种规则语法，是引擎的核心：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>能力</th><th>函数</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>模式检测</td><td><code>detectMode(rule, content)</code></td><td>按前缀推断：<code>@js:</code> → Js；<code>$.</code> → Json；<code>//</code> → XPath；否则 → CSS</td></tr>
+          <tr><td>规则拆分</td><td><code>parseRuleParts(rule)</code></td><td>按 <code>##</code> 拆分选择器与正则替换段，按 <code>@</code> 拆分选择器与取值类型</td></tr>
+          <tr><td>CSS 解析</td><td><code>analyzeCss()</code></td><td>使用 cheerio，支持 Legado 特殊语法：<code>text.</code> 文本匹配、<code>id.</code>/<code>class.</code> 简写、索引语法 <code>.item.0</code></td></tr>
+          <tr><td>XPath 解析</td><td><code>analyzeXPath()</code></td><td>使用 @xmldom/xmldom + xpath 库</td></tr>
+          <tr><td>JSON 解析</td><td><code>analyzeJson()</code></td><td>使用 jsonpath-plus</td></tr>
+          <tr><td>列表提取</td><td><code>getElements(content, rule)</code></td><td>按列表规则返回元素 HTML 片段数组</td></tr>
+          <tr><td>单值提取</td><td><code>getString() / getStringList()</code></td><td>支持 <code>||</code> 备选规则、<code>{{rule}}</code> mustache 插值</td></tr>
+          <tr><td>正则链</td><td><code>applyRegexChain()</code></td><td>按 <code>##</code> 拆出的 pattern/replacement 对执行链式替换</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>取值类型</strong>（<code>@</code> 后缀）：<code>@text</code> 纯文本 · <code>@html</code> 内部 HTML · <code>@href</code> 链接 · <code>@src</code> 图片地址 · <code>@ownText</code> 直接文本（不含子元素）· <code>@textNodes</code> 所有文本节点
+    </div>
+
+    <h3 id="main-local">4.6 本地文件解析 — <code>src/main/localBooks/</code></h3>
+
+    <h4>4.6.1 导入入口 <code>importLocal.ts</code></h4>
+    <ul>
+      <li><code>importLocalBookDialogAsync(win)</code> — 弹出文件选择对话框（支持 .txt / .epub）</li>
+      <li><code>importLocalBookAsync(filePath)</code> — 根据扩展名分派到 TXT 或 EPUB 解析</li>
+      <li><code>localBookId(filePath)</code> — SHA1 哈希生成 <code>local:</code> 前缀的稳定 ID</li>
+      <li><code>persistLocalBook()</code> — 将章节写入缓存库并 upsert 到书架</li>
+    </ul>
+
+    <h4>4.6.2 TXT 解析 <code>txtSplit.ts</code></h4>
+    <ul>
+      <li><strong>编码检测</strong>：<code>decodeTxtBuffer(buf)</code> — BOM 检测（UTF-8 / UTF-16LE / UTF-16BE）+ 多编码候选打分（utf-8 / gb18030 / gbk / gb2312 / big5），按 CJK 字符比例、替换符数量等打分选最优</li>
+      <li><strong>章节切分</strong>：<code>splitTxtChapters(raw, fallbackTitle)</code> — 正则启发式识别章节标题行（第X章 / 序章 / Chapter N / 数字序号），强标题不足 3 个时回退到全部标题；命中过少时按 12000 字体积切分</li>
+    </ul>
+
+    <h4>4.6.3 EPUB 解析 <code>epubParse.ts</code></h4>
+    <ul>
+      <li><code>parseEpubBuffer(buf, fallbackTitle)</code> — 使用 JSZip 解压，解析 <code>META-INF/container.xml</code> 找到 OPF，提取书名 (dc:title)、作者 (dc:creator)，按 spine 顺序读取章节 HTML</li>
+      <li><code>loadTocTitles()</code> — 从 EPUB3 nav XHTML 和 EPUB2 NCX 加载 href→标题映射</li>
+      <li><code>extractCoverDataUrl()</code> — 从 OPF manifest 提取封面图并转 data URL（支持 cover-image 属性、meta name=cover、文件名含 cover 三种策略）</li>
+    </ul>
+
+    <h4>4.6.4 TXT 导出 <code>exportTxt.ts</code></h4>
+    <ul>
+      <li><code>exportShelfBookToTxt(bookId, win, opts)</code> — 将书架在线书籍导出为 TXT：先检查缓存，缺失章节按书源拉取（并发），生成带署名的格式化 TXT 文件（BOM + UTF-8）</li>
+    </ul>
+
+    <h3>4.7 其他主进程模块</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td><code>asyncPool.ts</code></td><td><code>mapPool(items, concurrency, worker)</code> 固定并发上限异步池；<code>withTimeout(promise, ms, label)</code> Promise 超时包装</td></tr>
+          <tr><td><code>utils.ts</code></td><td>环境判断 (<code>is.dev</code>)、Windows AppUserModelId 设置、F12 开发者工具快捷键</td></tr>
+          <tr><td><code>systemFonts.ts</code></td><td>使用 <code>font-list</code> 枚举系统字体族，过滤 emoji / symbol 等非文本字体</td></tr>
+          <tr><td><code>updateCheck.ts</code></td><td>通过 Electron <code>net</code> 模块请求 Gitee Releases API，对比版本号判断是否有更新（仅提示，不自动下载）</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. Preload -->
+  <section id="preload">
+    <h2><span class="icon">🔗</span> 5. Preload IPC 桥接</h2>
+    <p>文件：<code>src/preload/index.ts</code></p>
+    <p>通过 <code>contextBridge.exposeInMainWorld('fly', api)</code> 暴露结构化 API 对象。安全配置：<code>contextIsolation: true</code>、<code>nodeIntegration: false</code>。</p>
+
+    <h4>API 结构</h4>
+    <pre><code>window.fly = {
+  // 应用级
+  getState(),                    // 获取应用全局状态
+  getVersion(),                  // 获取版本号
+  checkUpdate(),                 // 检查 Gitee 更新
+  openExternal(url),             // 用系统浏览器打开外链
+
+  // 书源管理
+  sources: {
+    list(),                      // 列出全部书源
+    importFile(),                // 从本地 JSON 导入
+    importUrl(url),              // 从 URL 订阅导入
+    toggle(url, enabled),        // 启用/禁用
+    remove(url),                 // 删除
+    update(oldUrl, source),      // 更新/替换
+    test(url, keyword?),         // 单测
+    testAll(keyword?, urls?),    // 批量测试
+    onTestProgress(cb),          // 监听测试进度
+    removeInvalid(),             // 删除无效书源
+  },
+
+  // 书籍与搜索
+  books: {
+    search(keyword),             // 多书源并发搜索
+    onSearchProgress(cb),        // 监听搜索进度
+    onSearchPartial(cb),         // 监听中间结果（流式）
+    history(),                   // 搜索历史
+    clearHistory(),              // 清空历史
+    removeHistory(keyword),      // 删除单条历史
+    info(origin, bookUrl),       // 获取书籍详情
+    toc(origin, tocUrl),         // 获取章节目录
+    content(origin, chapterUrl, bookId?),  // 获取正文（优先缓存）
+    cachedUrls(bookId),          // 列出已缓存 URL
+    preload(origin, bookId, urls[]),       // 预加载章节
+  },
+
+  // 书架
+  shelf: {
+    list(),                      // 书架列表
+    upsert(book),                // 插入/更新
+    patchProgress(id, patch),    // 仅更新进度
+    remove(id),                  // 移除（含清缓存）
+    importLocal(),               // 导入本地 TXT/EPUB
+    updateAll(),                 // 批量更新
+    cacheBook(id),               // 整本缓存
+    cancelCache(id),             // 取消缓存
+    exportTxt(id),               // 导出为 TXT
+    cacheStatus(id),             // 查询缓存状态
+    onUpdateProgress(cb),        // 监听更新进度
+    onCacheProgress(cb),         // 监听缓存进度
+  },
+
+  // 设置
+  settings: {
+    get(),                       // 获取阅读器设置
+    save(settings),              // 保存设置
+    addPurify(rule),             // 添加净化规则
+    removePurify(rule),          // 删除净化规则
+  },
+
+  // 字体与偏好
+  fonts: { list() },             // 系统字体列表
+  prefs: { get(), save(patch) }, // 应用偏好
+
+  // 老板键可见性
+  onBossVisibility(cb),          // 订阅老板键隐藏/显示状态
+}</code></pre>
+
+    <div class="callout tip">
+      所有 <code>on*</code> 方法返回取消订阅函数，用于 React <code>useEffect</code> 清理，避免内存泄漏。
+    </div>
+  </section>
+
+  <!-- 6. 渲染进程 -->
+  <section id="renderer">
+    <h2><span class="icon">🎨</span> 6. 渲染进程</h2>
+
+    <h3>6.1 入口</h3>
+    <ul>
+      <li><code>index.html</code> — HTML 入口，设置 CSP 策略（<code>default-src 'self'; img-src 'self' data: https: http:</code>），加载 <code>main.tsx</code></li>
+      <li><code>main.tsx</code> — React 18 <code>createRoot</code> + <code>StrictMode</code> 渲染 <code>App</code></li>
+      <li><code>env.d.ts</code> — 全局声明 <code>window.fly: FlyApi</code></li>
+    </ul>
+
+    <h3>6.2 根组件 <code>App.tsx</code></h3>
+    <p>应用根组件（约 1281 行），管理全部全局状态与 IPC 调度。核心职责：</p>
+    <ul>
+      <li><strong>导航</strong>：管理 <code>view</code> 状态（shelf / search / sources / settings / about / reader），非阅读页时持久化 <code>lastView</code></li>
+      <li><strong>全局状态</strong>：sources、shelf、settings、prefs、searchHistory、reading（当前阅读书籍）</li>
+      <li><strong>搜索流程</strong>：<code>runSearch()</code> — 多书源并发搜索，订阅进度与中间结果事件，流式更新结果列表，搜索完成后更新书源匹配分</li>
+      <li><strong>书架操作</strong>：<code>addToShelf()</code>（含同名书换源确认）、<code>updateShelfBook()</code>、<code>updateAllShelfBooks()</code>、<code>openBook()</code>（拉取目录与正文）</li>
+      <li><strong>换源</strong>：<code>openChangeSource()</code> 搜索同名其他书源，<code>applyChangeSource()</code> 执行换源并匹配原阅读章节</li>
+      <li><strong>阅读</strong>：<code>loadChapter()</code> 加载章节正文，按偏好预加载后续章节，<code>saveReadingScroll()</code> 持久化滚动位置</li>
+      <li><strong>UI 组成</strong>：左侧 sidebar 导航 + 右侧 content 区域；阅读页全屏覆盖；换源弹窗、确认对话框、Toast</li>
+    </ul>
+
+    <h3>6.3 页面视图</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>视图</th><th>文件</th><th>核心功能</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge badge-purple">书架</span></td><td><code>ShelfView.tsx</code></td><td>书籍列表（可按最近阅读 / 加入时间排序）、封面展示、<strong>上次阅读相对时间</strong>（formatLastReadLabel）、缓存徽章、操作按钮（打开 / 导入本地 / 更新 / 全部更新 / 换源 / 缓存 / 取消缓存 / 导出 TXT / 移除）</td></tr>
+          <tr><td><span class="badge badge-blue">搜书</span></td><td><code>SearchView.tsx</code></td><td>搜索输入框、进度条、搜索历史标签（点击重搜 / 单条删除 / 清空）、结果网格（封面 + 书名 + 作者 + 书源 + 最新章）</td></tr>
+          <tr><td><span class="badge badge-green">书源</span></td><td><code>SourcesView.tsx</code></td><td>统计筛选标签（全部 / 启用 / 禁用 / 可用 / 失效 / 残缺 / 未测）、测试关键词、批量测试当前筛选、URL 导入、书源编辑弹窗（JSON 编辑）、启用切换 / 单测 / 编辑 / 删除</td></tr>
+          <tr><td><span class="badge badge-orange">阅读</span></td><td><code>ReaderView.tsx</code></td><td>侧栏虚拟目录（VirtualList）、正文滚动与进度持久化、主题切换（纸感 / 护眼 / 夜间）、字体选择、字号 / 行距 / 版心滑块、自动滚屏（双击启动 / 单击停止）、右键选中文字加入净化</td></tr>
+          <tr><td><span class="badge badge-blue">设置</span></td><td><code>SettingsView.tsx</code></td><td>老板键（录制 + 启用）、<strong>护眼提醒</strong>（开关 + 间隔选择：1分钟/30分钟/1小时/2小时/5小时/10小时）、预加载章节数、网络请求并发数、正文净化规则列表管理</td></tr>
+          <tr><td><span class="badge badge-purple">关于</span></td><td><code>AboutView.tsx</code></td><td>应用信息展示、检查更新（Gitee Releases）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>6.4 可复用组件</h3>
+    <div class="card-grid">
+      <div class="card">
+        <h4>VirtualList</h4>
+        <p>固定行高虚拟列表，仅渲染可视区域 + overscan，绝对定位 + translateY 放置。暴露 <code>scrollToIndex(index, align)</code> 命令式句柄，用于阅读页目录跳转。</p>
+      </div>
+      <div class="card">
+        <h4>ConfirmDialog</h4>
+        <p>通用确认对话框，支持确认 / 取消 / 额外操作三按钮，Promise 风格调用，危险操作 danger 样式。</p>
+      </div>
+      <div class="card">
+        <h4>ShelfCover</h4>
+        <p>书架封面：网络封面图 / TXT 格式徽章 / EPUB 格式徽章 / 书名首字占位。</p>
+      </div>
+      <div class="card">
+        <h4>icons</h4>
+        <p>18 个 SVG 图标组件（搜索 / 加载 / 返回 / 上下章 / 删除 / 刷新 / 换源 / 导入 / 链接 / 测试 / 编辑 / 关闭 / 勾选 / 扫帚 / 过滤 / 齿轮 / 下载 / 导出 / 停止 / 目录 / 收起目录）。</p>
+      </div>
+      <div class="card">
+        <h4>SidebarMotto</h4>
+        <p>侧栏底部阅读短句展示：调用 <code>pickSidebarMotto()</code> 按时间片轮换，每 5 分钟切换一句（共 15 句），同一时段内保持稳定。</p>
+      </div>
+    </div>
+
+    <h3>6.5 自定义 Hooks</h3>
+    <div class="card-grid">
+      <div class="card">
+        <h4>useEyeCareReminder</h4>
+        <p><strong>护眼 / 久坐提醒</strong>：每秒 tick 累计阅读时长，仅在<strong>阅读页 + 窗口可见</strong>时计时；达到设定间隔后弹出「护眼提醒」对话框（知道了 / 稍后）。<strong>老板键隐藏时自动暂停计时并关闭提醒弹窗</strong>，避免旁人察觉；离开阅读页或窗口失焦时暂停。订阅 <code>window.fly.onBossVisibility</code> 感知老板键状态，依赖 <code>AppPrefs.eyeCareEnabled / eyeCareIntervalMinutes</code> 配置。</p>
+      </div>
+    </div>
+
+    <h3>6.6 渲染进程工具</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td><code>bossKey.ts</code></td><td><code>eventToAccelerator(e)</code> 键盘事件转 Electron accelerator；<code>formatBossKeyLabel(accel)</code> accelerator 转可读标签</td></tr>
+          <tr><td><code>shelfMatch.ts</code></td><td><code>sameNovel()</code> 同书判断（规范化书名 + 作者）；<code>findShelfDuplicates()</code> 书架查重；<code>findSameNovelSearchAlts()</code> 搜索结果中同名异源</td></tr>
+          <tr><td><code>cacheLabel.ts</code></td><td>生成书架条目缓存状态徽章文案与 CSS 类名</td></tr>
+          <tr><td><code>formatLastRead.ts</code></td><td><code>formatLastReadLabel(lastReadAt)</code> 生成书架「上次阅读」相对时间文案（刚刚 / N分钟前 / N小时前 / N天前 / N年前 / 暂未阅读）</td></tr>
+          <tr><td><code>sidebarMottos.ts</code></td><td><code>SIDEBAR_MOTTOS</code> 15 句阅读向短句库；<code>pickSidebarMotto(now, slotMs)</code> 按时间片确定性选取（同一时段稳定，默认 5 分钟轮换）</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 7. IPC -->
+  <section id="ipc">
+    <h2><span class="icon">📡</span> 7. IPC 通信</h2>
+
+    <h3>7.1 请求/响应通道（<code>ipcMain.handle</code>）</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>通道</th><th>参数</th><th>返回值</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td><code>app:getState</code></td><td>—</td><td><code>AppState</code></td><td>获取应用全局状态（书源 + 书架 + 设置 + 偏好）</td></tr>
+          <tr><td><code>app:getVersion</code></td><td>—</td><td><code>string</code></td><td>获取应用版本号</td></tr>
+          <tr><td><code>app:checkUpdate</code></td><td>—</td><td><code>UpdateCheckResult</code></td><td>检查 Gitee 最新版本</td></tr>
+          <tr><td><code>app:openExternal</code></td><td><code>url</code></td><td><code>{ok, message}</code></td><td>用系统浏览器打开外链</td></tr>
+          <tr><td><code>sources:list</code></td><td>—</td><td><code>BookSource[]</code></td><td>列出全部书源</td></tr>
+          <tr><td><code>sources:importFile</code></td><td>—</td><td><code>{ok, message, sources?}</code></td><td>从本地 JSON 导入书源</td></tr>
+          <tr><td><code>sources:importUrl</code></td><td><code>url</code></td><td><code>{ok, message, sources?}</code></td><td>从 URL 订阅导入书源</td></tr>
+          <tr><td><code>sources:toggle</code></td><td><code>url, enabled</code></td><td><code>BookSource[]</code></td><td>启用/禁用书源</td></tr>
+          <tr><td><code>sources:remove</code></td><td><code>url</code></td><td><code>BookSource[]</code></td><td>删除书源</td></tr>
+          <tr><td><code>sources:update</code></td><td><code>oldUrl, source</code></td><td><code>BookSource[]</code></td><td>更新（替换）书源</td></tr>
+          <tr><td><code>sources:test</code></td><td><code>url, keyword?</code></td><td><code>{result, sources}</code></td><td>测试单个书源</td></tr>
+          <tr><td><code>sources:testAll</code></td><td><code>keyword?, urls?</code></td><td><code>BookSource[]</code></td><td>批量测试书源</td></tr>
+          <tr><td><code>sources:removeInvalid</code></td><td>—</td><td><code>{sources, removed}</code></td><td>删除无效书源</td></tr>
+          <tr><td><code>books:search</code></td><td><code>keyword</code></td><td><code>{books, history, sources?}</code></td><td>多书源并发搜索</td></tr>
+          <tr><td><code>search:history</code></td><td>—</td><td><code>string[]</code></td><td>获取搜索历史</td></tr>
+          <tr><td><code>search:clearHistory</code></td><td>—</td><td><code>string[]</code></td><td>清空搜索历史</td></tr>
+          <tr><td><code>search:removeHistory</code></td><td><code>keyword</code></td><td><code>string[]</code></td><td>删除单条搜索历史</td></tr>
+          <tr><td><code>books:info</code></td><td><code>origin, bookUrl</code></td><td><code>BookInfo</code></td><td>获取书籍详情</td></tr>
+          <tr><td><code>books:toc</code></td><td><code>origin, tocUrl</code></td><td><code>Chapter[]</code></td><td>获取章节目录</td></tr>
+          <tr><td><code>books:content</code></td><td><code>origin, chapterUrl, bookId?</code></td><td><code>string</code></td><td>获取章节正文（优先缓存）</td></tr>
+          <tr><td><code>books:cachedUrls</code></td><td><code>bookId</code></td><td><code>string[]</code></td><td>列出已缓存章节 URL</td></tr>
+          <tr><td><code>books:preload</code></td><td><code>origin, bookId, urls[]</code></td><td><code>string[]</code></td><td>预加载章节到缓存</td></tr>
+          <tr><td><code>shelf:list</code></td><td>—</td><td><code>ShelfBook[]</code></td><td>获取书架列表</td></tr>
+          <tr><td><code>shelf:upsert</code></td><td><code>book</code></td><td><code>ShelfBook[]</code></td><td>插入/更新书架书籍</td></tr>
+          <tr><td><code>shelf:patchProgress</code></td><td><code>id, patch</code></td><td><code>ShelfBook | null</code></td><td>仅更新阅读进度</td></tr>
+          <tr><td><code>shelf:importLocal</code></td><td>—</td><td><code>{ok, message, book?, shelf?}</code></td><td>导入本地 TXT/EPUB</td></tr>
+          <tr><td><code>shelf:remove</code></td><td><code>id</code></td><td><code>ShelfBook[]</code></td><td>移除书架书籍（含清缓存）</td></tr>
+          <tr><td><code>shelf:cacheStatus</code></td><td><code>id</code></td><td><code>BookCacheInfo | null</code></td><td>查询缓存状态</td></tr>
+          <tr><td><code>shelf:cancelCache</code></td><td><code>id</code></td><td><code>ShelfBook[]</code></td><td>取消缓存任务</td></tr>
+          <tr><td><code>shelf:exportTxt</code></td><td><code>id</code></td><td><code>{ok, message, path?, ...}</code></td><td>导出为 TXT</td></tr>
+          <tr><td><code>shelf:cacheBook</code></td><td><code>id</code></td><td><code>ShelfBook[]</code></td><td>整本缓存各章正文</td></tr>
+          <tr><td><code>shelf:updateAll</code></td><td>—</td><td><code>ShelfBook[]</code></td><td>批量更新书架在线书籍</td></tr>
+          <tr><td><code>settings:get</code></td><td>—</td><td><code>ReaderSettings</code></td><td>获取阅读器设置</td></tr>
+          <tr><td><code>settings:save</code></td><td><code>settings</code></td><td><code>ReaderSettings</code></td><td>保存阅读器设置</td></tr>
+          <tr><td><code>settings:addPurify</code></td><td><code>rule</code></td><td><code>ReaderSettings</code></td><td>添加净化规则</td></tr>
+          <tr><td><code>settings:removePurify</code></td><td><code>rule</code></td><td><code>ReaderSettings</code></td><td>删除净化规则</td></tr>
+          <tr><td><code>fonts:list</code></td><td>—</td><td><code>string[]</code></td><td>列出系统字体族</td></tr>
+          <tr><td><code>prefs:get</code></td><td>—</td><td><code>AppPrefs</code></td><td>获取应用偏好</td></tr>
+          <tr><td><code>prefs:save</code></td><td><code>patch</code></td><td><code>{prefs, bossKey}</code></td><td>保存偏好（含老板键刷新）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>7.2 进度事件（主进程 → 渲染进程 <code>sender.send</code>）</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>事件名</th><th>载荷</th><th>触发场景</th></tr></thead>
+        <tbody>
+          <tr><td><code>app:boss-visibility</code></td><td><code>{hidden: boolean}</code></td><td>老板键隐藏 / 显示主窗口的状态通知（渲染进程据此暂停护眼计时并关闭提醒弹窗）</td></tr>
+          <tr><td><code>sources:test-progress</code></td><td><code>{done, total, current, phase, ok?}</code></td><td>批量测试书源进度</td></tr>
+          <tr><td><code>books:search-progress</code></td><td><code>{done, total, found, current, phase}</code></td><td>搜索进度</td></tr>
+          <tr><td><code>books:search-partial</code></td><td><code>SearchBook[]</code></td><td>搜索中间结果（流式更新）</td></tr>
+          <tr><td><code>shelf:update-progress</code></td><td><code>{done, total, current, phase, ok?}</code></td><td>书架批量更新进度</td></tr>
+          <tr><td><code>shelf:cache-progress</code></td><td><code>{bookId, done, total, current, phase, ok?, cached?}</code></td><td>整本缓存进度</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 8. 数据库 -->
+  <section id="database">
+    <h2><span class="icon">🗄️</span> 8. 数据库设计</h2>
+    <p>单一 SQLite 文件：<code>{userData}/fly-novel.sqlite</code>，WAL 模式，外键约束开启。</p>
+
+    <h3>表结构</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>表名</th><th>主键</th><th>字段</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>meta</code></td>
+            <td><code>key TEXT</code></td>
+            <td><code>key TEXT PK</code>, <code>value TEXT NOT NULL</code></td>
+            <td>元数据（迁移标记等）</td>
+          </tr>
+          <tr>
+            <td><code>settings</code></td>
+            <td><code>key TEXT</code></td>
+            <td><code>key TEXT PK</code>, <code>value TEXT NOT NULL</code></td>
+            <td>配置键值对（reader / app）</td>
+          </tr>
+          <tr>
+            <td><code>sources</code></td>
+            <td><code>book_source_url TEXT</code></td>
+            <td><code>book_source_url TEXT PK</code>, <code>data TEXT</code>, <code>sort_order INTEGER</code></td>
+            <td>书源（JSON 存储）</td>
+          </tr>
+          <tr>
+            <td><code>shelf_books</code></td>
+            <td><code>id TEXT</code></td>
+            <td><code>id TEXT PK</code>, <code>data TEXT</code>, <code>sort_order INTEGER</code>, <code>updated_at INTEGER</code></td>
+            <td>书架书籍（JSON 存储）</td>
+          </tr>
+          <tr>
+            <td><code>search_history</code></td>
+            <td><code>keyword TEXT</code></td>
+            <td><code>keyword TEXT PK</code>, <code>searched_at INTEGER</code></td>
+            <td>搜索历史</td>
+          </tr>
+          <tr>
+            <td><code>chapters</code></td>
+            <td><code>(book_id, chapter_url)</code></td>
+            <td><code>book_id TEXT</code>, <code>chapter_url TEXT</code>, <code>chapter_index INTEGER</code>, <code>title TEXT</code>, <code>content TEXT NOT NULL</code>, <code>cached_at INTEGER</code></td>
+            <td>章节正文缓存</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>索引</h3>
+    <pre><code>idx_chapters_url    ON chapters(chapter_url)
+idx_chapters_book   ON chapters(book_id)
+idx_shelf_sort      ON shelf_books(sort_order, updated_at DESC)
+idx_sources_sort    ON sources(sort_order)
+idx_history_time    ON search_history(searched_at DESC)</code></pre>
+
+    <div class="callout">
+      <strong>存储策略</strong>：书源和书架书籍以 JSON 字符串存储在 <code>data</code> 列中，便于 schema 演进（增减字段无需 ALTER TABLE），但牺牲了字段级查询能力。章节缓存则使用独立列存储，便于按 <code>book_id</code> / <code>chapter_url</code> 高效查询。
+    </div>
+  </section>
+
+  <!-- 9. 类型定义 -->
+  <section id="types">
+    <h2><span class="icon">📐</span> 9. 核心类型定义</h2>
+    <p>文件：<code>src/shared/types.ts</code> — 主进程与渲染进程共享的类型定义。</p>
+
+    <h4>书源 <code>BookSource</code></h4>
+    <pre><code>interface BookSource {
+  bookSourceUrl: string        // 书源 URL（主键）
+  bookSourceName: string       // 书源名称
+  bookSourceGroup?: string     // 书源分组
+  bookSourceType?: number      // 类型（0=文本，非 0 过滤）
+  enabled?: boolean            // 是否启用
+  header?: string              // 请求头 JSON
+  searchUrl?: string           // 搜索 URL 模板
+  ruleSearch?: SearchRule      // 搜索规则
+  ruleBookInfo?: BookInfoRule  // 详情规则
+  ruleToc?: TocRule            // 目录规则
+  ruleContent?: ContentRule    // 正文规则
+  // ── 应用本地元数据 ──
+  flyTestStatus?: 'ok' | 'fail' | 'untested'
+  flyRespondMs?: number
+  flySpeedTag?: SourceSpeedTag | null   // turbo/excellent/good/slow
+  flyMatchScore?: number                // 搜索匹配质量 EMA (0-100)
+  flyMatchSamples?: number              // 参与计算的样本数
+}</code></pre>
+
+    <h4>书籍与章节</h4>
+    <pre><code>interface SearchBook {
+  name: string; author: string; bookUrl: string
+  coverUrl?: string; intro?: string; kind?: string
+  lastChapter?: string; wordCount?: string
+  origin: string       // 书源 URL
+  originName: string   // 书源名称
+}
+
+interface BookInfo extends SearchBook {
+  tocUrl?: string      // 目录页 URL（可能与 bookUrl 不同）
+}
+
+interface Chapter {
+  title: string; url: string; index: number
+  isVolume?: boolean   // 是否卷标题（不可读）
+}
+
+interface ShelfBook {
+  id: string; name: string; author: string
+  bookUrl: string; coverUrl?: string; intro?: string
+  kind?: string; lastChapter?: string
+  origin: string; originName: string
+  tocUrl?: string; chapters?: Chapter[]
+  chapterIndex: number; scrollTop: number
+  addedAt: number; updatedAt: number; lastReadAt?: number
+  isLocal?: boolean; localPath?: string
+  localFormat?: 'txt' | 'epub'
+  cache?: BookCacheInfo
+}</code></pre>
+
+    <h4>设置与偏好</h4>
+    <pre><code>interface ReaderSettings {
+  fontSize: number       // 字号 (px)
+  lineHeight: number     // 行高倍数
+  pageWidth: number      // 版心宽度 (px)
+  theme: 'paper' | 'night' | 'green'
+  fontFamily: string     // 字体族
+  purifyRules: string[]  // 正文净化规则
+}
+
+interface AppPrefs {
+  sourceTestKeyword: string
+  lastView: string       // 上次页面
+  windowBounds: WindowBounds
+  bossKeyEnabled: boolean
+  bossKey: string        // Electron accelerator
+  preloadCount: number   // 预加载章节数
+  requestConcurrency: number  // 网络并发数 (1-16)
+  shelfSort: 'lastRead' | 'added'
+  eyeCareEnabled: boolean         // 护眼/久坐提醒开关
+  eyeCareIntervalMinutes: number  // 连续阅读多久后提醒（分钟）
+}
+
+// 护眼提醒可选间隔（分钟）：1 / 30 / 60 / 120 / 300 / 600
+EYE_CARE_INTERVAL_OPTIONS
+// clampEyeCareIntervalMinutes(value) — 将任意分钟数钳制为最近的合法间隔</code></pre>
+
+    <h4>常量</h4>
+    <pre><code>REQUEST_CONCURRENCY_MIN     = 1
+REQUEST_CONCURRENCY_MAX     = 16
+REQUEST_CONCURRENCY_DEFAULT = 8
+
+DEFAULT_SETTINGS = {
+  fontSize: 18, lineHeight: 1.8, pageWidth: 720,
+  theme: 'paper', ...
+}
+
+DEFAULT_PREFS = {
+  bossKey: 'CommandOrControl+Shift+H',
+  preloadCount: 3, requestConcurrency: 8,
+  shelfSort: 'lastRead', ...
+}</code></pre>
+
+    <h4>书源排序算法</h4>
+    <ul>
+      <li><code>speedTagFromRespondMs(ms)</code> — <500ms=turbo, <1500=excellent, <2000=good, else slow</li>
+      <li><code>sourceMatchStrength(s, shelfCountByOrigin)</code> — 学习分 (flyMatchScore) + 书架使用加成（每本 +18，上限 75，总上限 100）</li>
+      <li><code>compareSourcesForSearch(a, b, shelfCountByOrigin)</code> — 先比匹配强度 → 再比速度 → 再比响应时间</li>
+    </ul>
+  </section>
+
+  <!-- 10. 构建 -->
+  <section id="build">
+    <h2><span class="icon">📦</span> 10. 构建与部署</h2>
+
+    <h3>10.1 构建配置</h3>
+    <p><code>electron.vite.config.ts</code> 采用三段式构建：</p>
+    <ul>
+      <li><strong>main</strong>：使用 <code>externalizeDepsPlugin()</code>（将 dependencies 外置，不打包进 bundle）</li>
+      <li><strong>preload</strong>：同样 <code>externalizeDepsPlugin()</code></li>
+      <li><strong>renderer</strong>：配置 <code>@renderer</code> 路径别名，使用 <code>@vitejs/plugin-react</code></li>
+    </ul>
+
+    <h3>10.2 打包配置（electron-builder）</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>配置项</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>appId</td><td><code>com.flynovel.app</code></td></tr>
+          <tr><td>productName</td><td><code>FlyNovel</code></td></tr>
+          <tr><td>输出目录</td><td><code>release/</code></td></tr>
+          <tr><td>asarUnpack</td><td><code>better-sqlite3</code>（原生模块不解包）</td></tr>
+          <tr><td>macOS target</td><td>dmg + zip（<code>identity: null</code> 无签名）</td></tr>
+          <tr><td>Windows target</td><td>nsis + zip</td></tr>
+          <tr><td>Linux target</td><td>AppImage + deb</td></tr>
+          <tr><td>打包文件</td><td><code>out/**</code>、<code>better-sqlite3</code>、<code>font-list</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>10.3 构建命令</h3>
+    <pre><code># 开发运行（热更新）
+npm run dev
+
+# 仅编译（输出到 out/）
+npm run build
+
+# 预览编译结果
+npm run preview
+
+# 打包 macOS (dmg + zip)
+npm run dist
+
+# 打包 macOS（仅 .app 目录，调试更快）
+npm run dist:dir
+
+# 打包 Windows (nsis + zip)
+npm run dist:win
+
+# 打包 Linux (AppImage + deb)
+npm run dist:linux</code></pre>
+
+    <h3>10.4 postinstall 脚本</h3>
+    <p><code>npm install</code> 后自动执行 <code>scripts/ensure-electron.js</code>：</p>
+    <ul>
+      <li>检查 <code>node_modules/electron/dist</code> 下二进制是否存在</li>
+      <li>macOS 下将 <code>Electron.app</code> 重命名为 <code>FlyNovel.app</code>（Dock 显示正确名称），修改 Info.plist（CFBundleName / CFBundleDisplayName / CFBundleIdentifier），替换 Dock 图标</li>
+      <li>二进制缺失时从 npmmirror 下载对应平台 / 架构的 Electron zip</li>
+    </ul>
+    <p>随后执行 <code>electron-builder install-app-deps</code> 重建原生模块（better-sqlite3）以匹配 Electron ABI。</p>
+
+    <div class="callout warn">
+      <strong>原生模块 ABI 匹配</strong>：若启动崩溃（SIGSEGV），请确认使用的是兼容 Electron 34 的 <code>better-sqlite3@11.x</code>，并执行：<br>
+      <code>npx @electron/rebuild -f -w better-sqlite3</code>
+    </div>
+  </section>
+
+  <!-- 11. 开发指南 -->
+  <section id="dev">
+    <h2><span class="icon">🛠️</span> 11. 开发指南</h2>
+
+    <h3>11.1 环境要求</h3>
+    <ul>
+      <li>Node.js 18+（推荐 20 LTS）</li>
+      <li>npm 9+</li>
+      <li>macOS / Windows / Linux 均可开发</li>
+    </ul>
+
+    <h3>11.2 快速开始</h3>
+    <pre><code># 克隆仓库
+git clone https://gitee.com/wucc513721/fly-novel.git
+cd fly-novel
+
+# 安装依赖（postinstall 会自动修复 Electron + 重建原生模块）
+npm install
+
+# 如 Electron 下载失败，使用国内镜像
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+npm install
+# 或单独修复
+node scripts/ensure-electron.js
+
+# 启动开发
+npm run dev</code></pre>
+
+    <h3>11.3 开发说明</h3>
+    <ul>
+      <li>修改 <code>src/renderer</code> 一般可热更新（Vite HMR）</li>
+      <li>修改 <code>src/main</code> / <code>src/preload</code> 后通常需要重启 <code>npm run dev</code></li>
+      <li>按 <code>F12</code> 打开渲染进程开发者工具</li>
+      <li>书源规则解析自检：<code>npx tsx scripts/smoke-rules.ts</code></li>
+    </ul>
+
+    <h3>11.4 添加新 IPC 通道</h3>
+    <p>如需新增一个主进程能力并暴露给渲染进程，需修改三处：</p>
+    <ol>
+      <li><strong>主进程</strong> <code>src/main/index.ts</code> 的 <code>registerIpc()</code> 中添加 <code>ipcMain.handle('channel:name', handler)</code></li>
+      <li><strong>Preload</strong> <code>src/preload/index.ts</code> 的 <code>api</code> 对象中添加对应方法，内部调用 <code>ipcRenderer.invoke('channel:name', ...args)</code></li>
+      <li><strong>类型</strong> <code>src/renderer/src/env.d.ts</code> 中补充 <code>window.fly</code> 的类型声明</li>
+    </ol>
+    <p>对于进度事件，在主进程中使用 <code>event.sender.send('channel:progress', payload)</code>，在 preload 中用 <code>ipcRenderer.on()</code> 监听并暴露 <code>onXxxProgress(cb)</code> 方法（返回取消订阅函数）。</p>
+
+    <h3>11.5 添加新页面</h3>
+    <ol>
+      <li>在 <code>src/renderer/src/views/</code> 创建新视图组件</li>
+      <li>在 <code>App.tsx</code> 中添加 <code>view</code> 状态分支与 sidebar 导航入口</li>
+      <li>如需持久化上次页面，在 <code>AppPrefs</code> 的 <code>lastView</code> 中使用新值</li>
+    </ol>
+
+    <h3>11.6 TypeScript 配置</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>配置文件</th><th>作用域</th><th>关键设置</th></tr></thead>
+        <tbody>
+          <tr><td><code>tsconfig.json</code></td><td>根（无文件）</td><td>引用 node + web 两个子配置</td></tr>
+          <tr><td><code>tsconfig.node.json</code></td><td>主进程 + preload + shared</td><td><code>module: ESNext</code>、<code>strict: true</code>、<code>types: ["node"]</code></td></tr>
+          <tr><td><code>tsconfig.web.json</code></td><td>渲染进程 + shared</td><td><code>jsx: react-jsx</code>、<code>strict: true</code>、别名 <code>@renderer/*</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>11.7 数据目录</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>平台</th><th>路径</th></tr></thead>
+        <tbody>
+          <tr><td>macOS</td><td><code>~/Library/Application Support/fly-novel/</code></td></tr>
+          <tr><td>Windows</td><td><code>%APPDATA%/fly-novel/</code></td></tr>
+          <tr><td>Linux</td><td><code>~/.config/fly-novel/</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>目录内主要文件：<code>fly-novel.sqlite</code>（主数据库）、<code>fly-novel.sqlite-wal</code>（WAL 日志）。</p>
+  </section>
+
+  <!-- 12. FAQ -->
+  <section id="faq">
+    <h2><span class="icon">❓</span> 12. 常见问题</h2>
+
+    <h4>Q: 启动时崩溃（SIGSEGV）？</h4>
+    <p>A: 通常是 <code>better-sqlite3</code> 原生模块与 Electron ABI 不匹配。执行 <code>npx @electron/rebuild -f -w better-sqlite3</code> 重建。确认使用 <code>better-sqlite3@11.x</code>（兼容 Electron 34）。</p>
+
+    <h4>Q: 菜单栏显示 "Electron" 而非 "FlyNovel"？</h4>
+    <p>A: 已通过 <code>scripts/ensure-electron.js</code> 将 Electron.app 重命名为 FlyNovel.app 并修改 Info.plist。改名后需完全退出应用再启动。</p>
+
+    <h4>Q: 书源 / 书架突然空了？</h4>
+    <p>A: 数据固定在 <code>Application Support/fly-novel</code> 目录。若曾因 productName 变更落到 <code>FlyNovel</code> 空目录，启动新版后会自动迁移回原目录。</p>
+
+    <h4>Q: 某些书源搜索无结果？</h4>
+    <p>A: 书源可能需要 <code>@js</code> 规则、WebView 渲染或登录认证，这些属于暂不支持的复杂书源类型。可用 <code>scripts/smoke-rules.ts</code> 测试规则解析是否正常。</p>
+
+    <h4>Q: 如何在 Git 中忽略不需要的文件？</h4>
+    <p>A: <code>.gitignore</code> 已配置忽略 <code>node_modules/</code>、<code>out/</code>、<code>release/</code>、本地数据库与系统文件。请勿提交这些目录。</p>
+
+    <h4>Q: Windows 打包需要在 Windows 上进行吗？</h4>
+    <p>A: 推荐在 Windows 机器上打包 Windows 版本。交叉打包可能受限于代码签名与部分工具链。</p>
+  </section>
+
+  <!-- 13. 更新记录 -->
+  <section id="changelog">
+    <h2><span class="icon">📝</span> 13. 更新记录</h2>
+
+    <h4><code>08d7bde</code> 增加护眼提醒</h4>
+    <p>阅读久了可以让眼睛休息一下。</p>
+    <ul>
+      <li>新增 <code>useEyeCareReminder</code> Hook：仅在阅读页且窗口可见时累计阅读时长，达到设定间隔后弹「护眼提醒」对话框</li>
+      <li><strong>与老板键联动</strong>：老板键隐藏时自动暂停计时并关闭提醒弹窗，避免旁人察觉</li>
+      <li><code>AppPrefs</code> 新增 <code>eyeCareEnabled</code> / <code>eyeCareIntervalMinutes</code> 配置项，间隔可选 1 分钟 / 30 分钟 / 1 / 2 / 5 / 10 小时</li>
+      <li>主进程新增 <code>app:boss-visibility</code> 广播事件，preload 暴露 <code>onBossVisibility()</code> 订阅方法</li>
+      <li>设置页新增「护眼提醒」设置区（开关 + 间隔下拉）</li>
+    </ul>
+
+    <h4><code>8899b4c</code> 书架上次阅读时间 + 侧栏阅读短句</h4>
+    <ul>
+      <li>书架书籍条目显示「上次阅读」相对时间（刚刚 / N分钟前 / N小时前 / N天前 / N年前 / 暂未阅读），由 <code>formatLastRead.ts</code> 实现</li>
+      <li>软件界面左下角新增 <code>SidebarMotto</code> 组件，展示阅读向短句，每 5 分钟自动切换（15 句短句库，同一时段保持稳定）</li>
+    </ul>
+
+    <h4><code>9da3f6f</code> Bug 修复：章节更新误报</h4>
+    <ul>
+      <li>修复章节未更新时也提示「更新 N 章」的问题</li>
+      <li><code>matchChapter.ts</code> 新增 <code>readableChapters()</code>（过滤分卷等不可读章节）、<code>countAddedChapters()</code>（旧目录为空时返回 0，避免首次拉取整本目录误报为新增）、<code>catalogUpdateKind()</code>（区分 none / first / added，含末章 URL 变化检测）</li>
+    </ul>
+
+    <h4><code>7481afc</code> 轻量检查更新</h4>
+    <ul>
+      <li>基于 Gitee 发行版（Releases API）的版本检查，对比语义化版本号后仅提示，不自动下载</li>
+      <li>新增 IPC 通道 <code>app:checkUpdate</code> / <code>app:getVersion</code> / <code>app:openExternal</code>，关于页可手动触发检查并跳转下载页</li>
+    </ul>
+  </section>
+
+  <hr>
+  <p style="text-align:center; color:var(--text-muted); font-size:13px;">
+    FlyNovel 开发文档 · MIT License · 作者：飞鸟传说<br>
+    源码仓库：<a href="https://gitee.com/wucc513721/fly-novel">https://gitee.com/wucc513721/fly-novel</a>
+  </p>
+
+  </div>
+  </div>
+</div>
+</body>
+</html>
