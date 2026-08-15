@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { filterChangeSourceCandidates, filterRelevantSearchHits, dedupeSearchBooks } from '../../shared/searchRelevance'
 import { authorLabel } from '../../shared/author'
 import { isLocalBook } from '../../shared/bookLocal'
-import { matchChapterIndex } from '../../shared/matchChapter'
+import { catalogUpdateKind, countAddedChapters, matchChapterIndex, readableChapters } from '../../shared/matchChapter'
 import {
   DEFAULT_PREFS,
   DEFAULT_SETTINGS,
@@ -460,13 +460,16 @@ export default function App() {
       const info = await window.fly.books.info(book.origin, book.bookUrl)
       const tocUrl = info.tocUrl || book.tocUrl || book.bookUrl
       const list = await window.fly.books.toc(book.origin, tocUrl)
+      const kind = catalogUpdateKind(book.chapters, list)
+      const added = countAddedChapters(book.chapters, list)
+      const total = readableChapters(list).length
       const updated: ShelfBook = {
         ...book,
         name: info.name || book.name,
         author: info.author || book.author,
         coverUrl: info.coverUrl || book.coverUrl,
         intro: info.intro || book.intro,
-        lastChapter: info.lastChapter || book.lastChapter,
+        lastChapter: info.lastChapter || list[list.length - 1]?.title || book.lastChapter,
         tocUrl,
         chapters: list,
         chapterIndex: matchChapterIndex(book, list),
@@ -474,12 +477,15 @@ export default function App() {
       }
       const next = await window.fly.shelf.upsert(updated)
       setShelf(next)
-      const added = Math.max(0, list.length - (book.chapters?.length || 0))
-      showToast(
-        added > 0
-          ? `《${updated.name}》已更新，新增 ${added} 章（共 ${list.length} 章）`
-          : `《${updated.name}》已更新，共 ${list.length} 章`
-      )
+      if (kind === 'added' && added > 0) {
+        showToast(`《${updated.name}》已更新，新增 ${added} 章（共 ${total} 章）`)
+      } else if (kind === 'first') {
+        showToast(`《${updated.name}》已同步目录，共 ${total} 章`)
+      } else if (kind === 'added') {
+        showToast(`《${updated.name}》目录已刷新（共 ${total} 章）`)
+      } else {
+        showToast(`《${updated.name}》暂无更新`)
+      }
     } catch (e) {
       showToast(`更新失败：${(e as Error).message}`)
     } finally {
@@ -492,6 +498,9 @@ export default function App() {
     if (!shelf.length || shelfUpdatingAll || shelfBusyId) return
     setShelfUpdatingAll(true)
     setShelfUpdateProgress(`0/${shelf.length}`)
+    const beforeLens = new Map(
+      shelf.map((b) => [b.id, readableChapters(b.chapters).length] as const)
+    )
     const off = window.fly.shelf.onUpdateProgress((p) => {
       setShelfUpdateProgress(
         p.phase === 'done' ? '完成' : `${p.done}/${p.total}${p.current ? ` · ${p.current}` : ''}`
@@ -500,7 +509,27 @@ export default function App() {
     try {
       const next = await window.fly.shelf.updateAll()
       setShelf(next)
-      showToast(`书架更新完成（${next.length} 本）`)
+      let booksWithNew = 0
+      let chaptersAdded = 0
+      let firstSynced = 0
+      for (const b of next) {
+        if (isLocalBook(b)) continue
+        const prev = beforeLens.get(b.id) || 0
+        const now = readableChapters(b.chapters).length
+        if (prev === 0 && now > 0) {
+          firstSynced += 1
+        } else if (now > prev) {
+          booksWithNew += 1
+          chaptersAdded += now - prev
+        }
+      }
+      if (booksWithNew > 0) {
+        showToast(`书架更新完成：${booksWithNew} 本有更新，共新增 ${chaptersAdded} 章`)
+      } else if (firstSynced > 0) {
+        showToast(`书架已同步 ${firstSynced} 本目录，暂无新章节`)
+      } else {
+        showToast('书架暂无更新')
+      }
     } catch (e) {
       showToast(`全部更新失败：${(e as Error).message}`)
     } finally {
