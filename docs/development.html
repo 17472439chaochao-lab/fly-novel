@@ -215,7 +215,7 @@
   <aside class="sidebar">
     <div class="sidebar-brand">
       <h2>FlyNovel</h2>
-      <p>开发文档 v1.0.3</p>
+      <p>开发文档 v1.0.0</p>
     </div>
     <nav>
       <a href="#overview">1. 项目概览</a>
@@ -266,7 +266,7 @@
       <li><strong>本地阅读</strong>：打开本地 TXT / EPUB 文件，自动编码检测与章节切分</li>
       <li><strong>离线缓存</strong>：章节正文存入 SQLite，断网可读已缓存章节；支持整本缓存与导出 TXT</li>
       <li><strong>阅读体验</strong>：纸感 / 护眼 / 夜间三主题，系统字体选择，字号 / 行距 / 版心可调</li>
-      <li><strong>实用功能</strong>：老板键一键隐藏、自动滚屏、内置广告链接净化 + 自定义正文净化规则、护眼/久坐提醒、版本更新检查</li>
+      <li><strong>实用功能</strong>：老板键一键隐藏、自动滚屏、正文净化规则、护眼/久坐提醒、版本更新检查</li>
       <li><strong>贴心细节</strong>：书架显示上次阅读时间、侧栏底部每 5 分钟轮换阅读短句</li>
     </ul>
 
@@ -412,7 +412,7 @@
 │   │       ├── <span class="dir">views/</span>                 <span class="desc"># ── 页面视图 ──</span>
 │   │       │   ├── <span class="file">ShelfView.tsx</span>     <span class="desc"># 书架页</span>
 │   │       │   ├── <span class="file">SearchView.tsx</span>    <span class="desc"># 搜书页</span>
-│   │       │   ├── <span class="file">SourcesView.tsx</span>   <span class="desc"># 书源管理页（筛选/测试/导入/导出/编辑）</span>
+│   │       │   ├── <span class="file">SourcesView.tsx</span>   <span class="desc"># 书源管理页</span>
 │   │       │   ├── <span class="file">ReaderView.tsx</span>    <span class="desc"># 阅读页</span>
 │   │       │   ├── <span class="file">SettingsView.tsx</span>  <span class="desc"># 设置页</span>
 │   │       │   └── <span class="file">AboutView.tsx</span>     <span class="desc"># 关于页</span>
@@ -438,7 +438,7 @@
 │       ├── <span class="file">bookLocal.ts</span>              <span class="desc"># 本地书判断</span>
 │       ├── <span class="file">matchChapter.ts</span>           <span class="desc"># 章节对齐与目录更新判断</span>
 │       ├── <span class="file">sourceValidity.ts</span>         <span class="desc"># 书源结构校验</span>
-│       ├── <span class="file">purify.ts</span>                 <span class="desc"># 内置广告链接净化 + 用户净化规则</span>
+│       ├── <span class="file">purify.ts</span>                 <span class="desc"># 正文净化规则</span>
 │       ├── <span class="file">fonts.ts</span>                  <span class="desc"># 字体工具</span>
 │       ├── <span class="file">author.ts</span>                 <span class="desc"># 作者名规范化</span>
 │       └── <span class="file">updateCheck.ts</span>            <span class="desc"># 版本比较类型</span></div>
@@ -621,7 +621,6 @@
     list(),                      // 列出全部书源
     importFile(),                // 从本地 JSON 导入
     importUrl(url),              // 从 URL 订阅导入
-    exportFile(urls?),           // 导出为 Legado 兼容 JSON（可按 URL 列表限定范围）
     toggle(url, enabled),        // 启用/禁用
     remove(url),                 // 删除
     update(oldUrl, source),      // 更新/替换
@@ -713,9 +712,9 @@
         <tbody>
           <tr><td><span class="badge badge-purple">书架</span></td><td><code>ShelfView.tsx</code></td><td>书籍列表（可按最近阅读 / 加入时间排序）、封面展示、<strong>上次阅读相对时间</strong>（formatLastReadLabel）、缓存徽章、操作按钮（打开 / 导入本地 / 更新 / 全部更新 / 换源 / 缓存 / 取消缓存 / 导出 TXT / 移除）</td></tr>
           <tr><td><span class="badge badge-blue">搜书</span></td><td><code>SearchView.tsx</code></td><td>搜索输入框、进度条、搜索历史标签（点击重搜 / 单条删除 / 清空）、结果网格（封面 + 书名 + 作者 + 书源 + 最新章）</td></tr>
-          <tr><td><span class="badge badge-green">书源</span></td><td><code>SourcesView.tsx</code></td><td>统计筛选标签（全部 / 启用 / 禁用 / 可用 / 失效 / 残缺 / 未测）、测试关键词、批量测试当前筛选、URL 导入、书源编辑弹窗（JSON 编辑）、启用切换 / 单测 / 编辑 / 删除 / 导出当前筛选书源（导出含筛选数量徽标）</td></tr>
+          <tr><td><span class="badge badge-green">书源</span></td><td><code>SourcesView.tsx</code></td><td>统计筛选标签（全部 / 启用 / 禁用 / 可用 / 失效 / 残缺 / 未测）、测试关键词、批量测试当前筛选、URL 导入、书源编辑弹窗（JSON 编辑）、启用切换 / 单测 / 编辑 / 删除</td></tr>
           <tr><td><span class="badge badge-orange">阅读</span></td><td><code>ReaderView.tsx</code></td><td>侧栏虚拟目录（VirtualList）、正文滚动与进度持久化、主题切换（纸感 / 护眼 / 夜间）、字体选择、字号 / 行距 / 版心滑块、自动滚屏（双击启动 / 单击停止）、右键选中文字加入净化</td></tr>
-          <tr><td><span class="badge badge-blue">设置</span></td><td><code>SettingsView.tsx</code></td><td>老板键（录制 + 启用）、<strong>护眼提醒</strong>（开关 + 间隔选择：1分钟/30分钟/1小时/2小时/5小时/10小时）、预加载章节数、网络请求并发数、正文净化规则列表管理（顶部说明已内置剔除广告链接，用户可追加自定义规则）</td></tr>
+          <tr><td><span class="badge badge-blue">设置</span></td><td><code>SettingsView.tsx</code></td><td>老板键（录制 + 启用）、<strong>护眼提醒</strong>（开关 + 间隔选择：1分钟/30分钟/1小时/2小时/5小时/10小时）、预加载章节数、网络请求并发数、正文净化规则列表管理</td></tr>
           <tr><td><span class="badge badge-purple">关于</span></td><td><code>AboutView.tsx</code></td><td>应用信息展示、检查更新（Gitee Releases）</td></tr>
         </tbody>
       </table>
@@ -784,7 +783,6 @@
           <tr><td><code>sources:list</code></td><td>—</td><td><code>BookSource[]</code></td><td>列出全部书源</td></tr>
           <tr><td><code>sources:importFile</code></td><td>—</td><td><code>{ok, message, sources?}</code></td><td>从本地 JSON 导入书源</td></tr>
           <tr><td><code>sources:importUrl</code></td><td><code>url</code></td><td><code>{ok, message, sources?}</code></td><td>从 URL 订阅导入书源</td></tr>
-          <tr><td><code>sources:exportFile</code></td><td><code>urls?</code></td><td><code>{ok, message, count?, path?}</code></td><td>导出为 Legado 兼容 JSON（可按 URL 列表限定范围；保存对话框默认文件名 <code>fly-novel-sources-YYYY-MM-DD.json</code>）</td></tr>
           <tr><td><code>sources:toggle</code></td><td><code>url, enabled</code></td><td><code>BookSource[]</code></td><td>启用/禁用书源</td></tr>
           <tr><td><code>sources:remove</code></td><td><code>url</code></td><td><code>BookSource[]</code></td><td>删除书源</td></tr>
           <tr><td><code>sources:update</code></td><td><code>oldUrl, source</code></td><td><code>BookSource[]</code></td><td>更新（替换）书源</td></tr>
@@ -1064,7 +1062,6 @@ npm run dist:linux</code></pre>
       <li>检查 <code>node_modules/electron/dist</code> 下二进制是否存在</li>
       <li>macOS 下将 <code>Electron.app</code> 重命名为 <code>FlyNovel.app</code>（Dock 显示正确名称），修改 Info.plist（CFBundleName / CFBundleDisplayName / CFBundleIdentifier），替换 Dock 图标</li>
       <li>二进制缺失时从 npmmirror 下载对应平台 / 架构的 Electron zip</li>
-      <li>项目 <code>.npmrc</code> 已持久化 <code>electron_mirror</code> 与 <code>electron_builder_binaries_mirror</code>，默认指向 npmmirror，可免去手动设置环境变量</li>
     </ul>
     <p>随后执行 <code>electron-builder install-app-deps</code> 重建原生模块（better-sqlite3）以匹配 Electron ABI。</p>
 
@@ -1178,46 +1175,6 @@ npm run dev</code></pre>
   <!-- 13. 更新记录 -->
   <section id="changelog">
     <h2><span class="icon">📝</span> 13. 更新记录</h2>
-
-    <h4><code>26dbf9d</code> Electron 镜像指向国内</h4>
-    <p>版本升至 <code>1.0.3</code>，并配置国内镜像加速依赖与打包二进制下载。</p>
-    <ul>
-      <li><code>.npmrc</code> 新增 <code>electron_mirror</code> 与 <code>electron_builder_binaries_mirror</code>，指向 npmmirror，默认走国内源，无需再手动设置环境变量</li>
-      <li><code>package.json</code> 版本 <code>1.0.2 → 1.0.3</code></li>
-    </ul>
-
-    <h4><code>d71a26a</code> 书源管理增加导出功能</h4>
-    <p>书源管理页支持将当前筛选结果导出为 Legado 兼容的 JSON 文件，便于备份与分享。</p>
-    <ul>
-      <li>主进程新增 IPC <code>sources:exportFile</code>：可按 <code>urls?</code> 参数限定导出范围（缺省导出全部）；通过 <code>dialog.showSaveDialog</code> 选择保存路径，默认文件名 <code>fly-novel-sources-YYYY-MM-DD.json</code>，格式化缩进 2 空格</li>
-      <li>导出时通过 <code>toExportableSource()</code> 剥离 <code>fly*</code> 本地元数据字段（<code>flyTestStatus</code> / <code>flyTestMessage</code> / <code>flyTestAt</code> / <code>flyRespondMs</code> / <code>flySpeedTag</code> / <code>flyMatchScore</code> / <code>flyMatchSamples</code>），保证与 Legado 标准书源兼容</li>
-      <li>preload 新增 <code>sources.exportFile(urls?)</code> API</li>
-      <li>SourcesView 新增「导出（N）」按钮，导出当前顶部筛选分类下的全部书源；筛选为空或批量测试中禁用</li>
-    </ul>
-
-    <h4><code>41bc98c</code> 修复 Windows 编辑书源弹窗底部按钮错位</h4>
-    <p>Windows 环境下，编辑书源弹窗内 textarea 因 <code>resize: vertical</code> 且不收缩，把底部「保存 / 取消」按钮挤出可视区。修复方式：</p>
-    <ul>
-      <li><code>.modal</code> 增加 <code>height: min(80vh, 720px)</code> 与 <code>overflow: hidden</code>，约束弹窗总高度</li>
-      <li><code>.modal-editor</code> 改为 <code>flex: 1 1 auto; min-height: 0; resize: none</code>，让编辑框在 flex 容器内正确收缩</li>
-      <li><code>.modal-head</code> / <code>.modal-actions</code> / <code>.edit-name-field</code> 增加 <code>flex-shrink: 0</code>，固定头部与按钮栏高度不被挤压</li>
-      <li>通用按钮 <code>.btn</code> 增加 <code>justify-content: center</code> / <code>line-height: 1.2</code> 与透明边框，修正 Windows 下文字与布局偏移</li>
-    </ul>
-
-    <h4><code>ee3c055</code> 内置广告链接净化</h4>
-    <p>版本升至 <code>1.0.2</code>。阅读正文中的推广网址会被自动剔除。</p>
-    <ul>
-      <li><code>purify.ts</code> 重构：新增 <code>applyBuiltinPurify(text)</code>，用内置正则 <code>BUILTIN_AD_URL_RE</code> 自动剔除广告链接，覆盖三类形态：
-        <ul>
-          <li><code>http(s)://</code> 开头的完整 URL</li>
-          <li><code>www.</code> / <code>m.</code> 域名（可无路径）</li>
-          <li>不带 www 但带路径的裸域名，如 <code>abcd.com/aaa/bbb.html</code>（末尾数字可变）</li>
-        </ul>
-      </li>
-      <li>匹配到空白或中文 / 全角标点即停止，<strong>裸域名无路径不剔除</strong>，避免误伤 <code>file.txt</code> 一类文本</li>
-      <li><code>applyPurify(text, rules)</code> 现改为「先走内置净化，再按用户规则做字面量子串删除」两段式</li>
-      <li>设置页「正文净化」区说明更新，提示已内置剔除广告链接、用户可追加自定义规则</li>
-    </ul>
 
     <h4><code>08d7bde</code> 增加护眼提醒</h4>
     <p>阅读久了可以让眼睛休息一下。</p>
