@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, Menu, globalShortcut, nativeTheme } from 'electron'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from './utils'
 import * as store from './store'
@@ -164,6 +164,30 @@ function importFromParsed(json: unknown) {
   const sources = normalizeSources(json)
   if (!sources.length) return { ok: false as const, message: '未识别到有效书源' }
   return importResultPayload(store.importSources(sources))
+}
+
+/** 应用本地元数据字段，导出时剥离以保持 Legado 兼容 */
+const FLY_SOURCE_META_KEYS = [
+  'flyTestStatus',
+  'flyTestMessage',
+  'flyTestAt',
+  'flyRespondMs',
+  'flySpeedTag',
+  'flyMatchScore',
+  'flyMatchSamples'
+] as const
+
+/**
+ * 将书源转为可导出的纯 JSON 对象（去掉 fly* 本地字段）。
+ * @param source - 内部书源
+ * @returns Legado 风格书源对象
+ */
+function toExportableSource(source: BookSource): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...source }
+  for (const key of FLY_SOURCE_META_KEYS) {
+    delete out[key]
+  }
+  return out
 }
 
 /**
@@ -415,6 +439,39 @@ function registerIpc(): void {
       return importFromParsed(JSON.parse(body) as unknown)
     } catch (e) {
       return { ok: false, message: `URL 导入失败：${(e as Error).message}` }
+    }
+  })
+
+  // 导出书源为 Legado 兼容 JSON（可按 URL 列表限定范围）
+  ipcMain.handle('sources:exportFile', async (e, urls?: string[]) => {
+    const all = store.getSources()
+    const urlSet = Array.isArray(urls) && urls.length ? new Set(urls) : null
+    const list = urlSet ? all.filter((s) => urlSet.has(s.bookSourceUrl)) : all
+    if (!list.length) return { ok: false, message: '没有可导出的书源' }
+
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const stamp = new Date().toISOString().slice(0, 10)
+    const saveOpts = {
+      title: '导出书源',
+      defaultPath: `fly-novel-sources-${stamp}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    }
+    const save = win
+      ? await dialog.showSaveDialog(win, saveOpts)
+      : await dialog.showSaveDialog(saveOpts)
+    if (save.canceled || !save.filePath) return { ok: false, message: '已取消' }
+
+    try {
+      const payload = list.map(toExportableSource)
+      writeFileSync(save.filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      return {
+        ok: true,
+        message: `已导出 ${list.length} 个书源`,
+        count: list.length,
+        path: save.filePath
+      }
+    } catch (err) {
+      return { ok: false, message: `导出失败：${(err as Error).message}` }
     }
   })
 

@@ -59,6 +59,17 @@ const api = {
         sources?: BookSource[]
       }>,
     /**
+     * 导出书源为 JSON 文件（可按 URL 列表限定范围）
+     * @param urls 可选，限定导出的书源 URL；缺省导出全部
+     */
+    exportFile: (urls?: string[]) =>
+      ipcRenderer.invoke('sources:exportFile', urls) as Promise<{
+        ok: boolean
+        message: string
+        count?: number
+        path?: string
+      }>,
+    /**
      * 启用或禁用指定书源
      * @param url 书源 URL
      * @param enabled 是否启用

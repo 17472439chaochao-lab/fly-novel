@@ -15,6 +15,7 @@ import {
   IconCheck,
   IconClose,
   IconEdit,
+  IconExport,
   IconImport,
   IconLink,
   IconTest,
@@ -227,6 +228,16 @@ export function SourcesView({
     showToast(removed ? `已删除 ${removed} 个无效书源` : '没有删除任何书源')
   }
 
+  /** 将当前筛选下的书源导出为 JSON 文件 */
+  async function onExportCurrent() {
+    if (!filteredSources.length) {
+      showToast('当前没有可导出的书源')
+      return
+    }
+    const res = await window.fly.sources.exportFile(filteredSources.map((s) => s.bookSourceUrl))
+    if (res.message !== '已取消') showToast(res.message)
+  }
+
   /**
    * 打开书源编辑弹窗并填充名称与 JSON
    * @param s 待编辑书源
@@ -346,6 +357,15 @@ export function SourcesView({
         >
           <IconBroom />
           删除无效（{stats.invalid}）
+        </button>
+        <button
+          className="btn ghost"
+          disabled={!filteredSources.length || testingAll}
+          title="导出当前顶部筛选分类中的书源为 JSON"
+          onClick={() => void onExportCurrent()}
+        >
+          <IconExport />
+          导出（{filteredSources.length}）
         </button>
       </div>
 
