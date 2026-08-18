@@ -1,7 +1,7 @@
 /** 应用身份信息与开源致谢（关于页展示用）。 */
 export const APP_ABOUT = {
   name: 'FlyNovel',
-  version: '1.0.0',
+  version: '1.0.3',
   author: '飞鸟传说',
   qq: '17472439',
   email: '17472439chaochao@gmail.com',

@@ -20,7 +20,7 @@ const CHAPTER_ROW_HEIGHT = 36
 
 /**
  * 阅读页：侧栏虚拟目录、正文滚动与进度持久化、
- * 主题/字体/版心设置、自动滚屏，以及选中文字加入净化。
+ * 主题/字体设置、自动滚屏，以及选中文字加入净化。
  */
 export function ReaderView({
   book,
@@ -57,11 +57,7 @@ export function ReaderView({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [systemFonts, setSystemFonts] = useState<string[]>([])
   const [fontsLoading, setFontsLoading] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
   const [cachedUrls, setCachedUrls] = useState<Set<string>>(() => new Set())
-  const [viewportWidth, setViewportWidth] = useState(
-    typeof window !== 'undefined' ? window.innerWidth : 1100
-  )
   const chapterListRef = useRef<VirtualListHandle | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const skipScrollSaveRef = useRef(false)
@@ -86,10 +82,10 @@ export function ReaderView({
       .filter(Boolean)
   }, [content, settings.purifyRules])
 
-  const wideLayout = isFullscreen
-  const articleMaxWidth = wideLayout
-    ? Math.max(settings.pageWidth, Math.min(1100, Math.floor(viewportWidth * 0.78)))
-    : settings.pageWidth
+  const onPrevRef = useRef(onPrev)
+  onPrevRef.current = onPrev
+  const onNextRef = useRef(onNext)
+  onNextRef.current = onNext
 
   /**
    * 对章节标题应用净化规则并压缩空白
@@ -145,23 +141,29 @@ export function ReaderView({
   }, [settingsOpen, systemFonts.length, fontsLoading])
 
   useEffect(() => {
-    /** 同步全屏状态与视口宽度（含 macOS 红绿灯全屏近似判断） */
-    const syncFullscreen = () => {
-      setViewportWidth(window.innerWidth)
-      const el = document.fullscreenElement
-      // macOS 红绿灯全屏常扩大窗口而非使用 Fullscreen API
-      const nearlyFull =
-        Math.abs(window.outerWidth - screen.width) < 8 &&
-        Math.abs(window.outerHeight - screen.height) < 40
-      setIsFullscreen(Boolean(el) || nearlyFull)
+    /** 左右方向键翻章；输入框内不拦截 */
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      const el = e.target as HTMLElement | null
+      if (
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.tagName === 'SELECT' ||
+          el.isContentEditable)
+      ) {
+        return
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        onPrevRef.current()
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        onNextRef.current()
+      }
     }
-    syncFullscreen()
-    window.addEventListener('resize', syncFullscreen)
-    document.addEventListener('fullscreenchange', syncFullscreen)
-    return () => {
-      window.removeEventListener('resize', syncFullscreen)
-      document.removeEventListener('fullscreenchange', syncFullscreen)
-    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   useEffect(() => {
@@ -238,7 +240,7 @@ export function ReaderView({
 
   return (
     <div
-      className={`reader${tocOpen ? '' : ' toc-collapsed'}${wideLayout ? ' wide-content' : ''}`}
+      className={`reader${tocOpen ? '' : ' toc-collapsed'}`}
     >
       {!tocOpen ? (
         <button
@@ -323,7 +325,12 @@ export function ReaderView({
               <IconGear />
               设置
             </button>
-            <button className="btn ghost" onClick={onPrev} disabled={book.chapterIndex <= 0}>
+            <button
+              className="btn ghost"
+              onClick={onPrev}
+              disabled={book.chapterIndex <= 0}
+              title="上一章（←）"
+            >
               <IconPrev />
               上一章
             </button>
@@ -331,6 +338,7 @@ export function ReaderView({
               className="btn ghost"
               onClick={onNext}
               disabled={book.chapterIndex >= chapters.length - 1}
+              title="下一章（→）"
             >
               下一章
               <IconNext />
@@ -420,19 +428,6 @@ export function ReaderView({
                 }
               />
             </div>
-            <div className="reader-settings-row">
-              <span>版心 {settings.pageWidth}px</span>
-              <input
-                type="range"
-                min={520}
-                max={900}
-                step={20}
-                value={settings.pageWidth}
-                onChange={(e) =>
-                  onSettingsChange({ ...settings, pageWidth: Number(e.target.value) })
-                }
-              />
-            </div>
           </div>
         ) : null}
         <div
@@ -468,7 +463,6 @@ export function ReaderView({
                 {
                   ['--font-size' as string]: `${settings.fontSize}px`,
                   ['--line-height' as string]: String(settings.lineHeight),
-                  ['--page-width' as string]: `${articleMaxWidth}px`,
                   ['--reader-font' as string]:
                     settings.fontFamily || platformDefaultFontFamily()
                 } as CSSProperties

@@ -1696,7 +1696,7 @@ html.theme-night .badge.match-low {
 .reader-scroll {
   flex: 1;
   overflow: auto;
-  padding: 12px 24px 48px;
+  padding: 12px 20px 48px;
   position: relative;
 }
 
@@ -1723,14 +1723,9 @@ html.theme-night .badge.match-low {
   -webkit-app-region: no-drag;
 }
 
-.reader.wide-content .reader-scroll {
-  padding-left: 40px;
-  padding-right: 40px;
-}
-
 .reader-article {
-  margin: 0 auto;
-  max-width: var(--page-width, 720px);
+  margin: 0;
+  max-width: none;
   width: 100%;
   font-family: var(--reader-font);
   font-size: var(--font-size, 18px);

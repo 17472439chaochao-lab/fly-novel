@@ -215,7 +215,7 @@
   <aside class="sidebar">
     <div class="sidebar-brand">
       <h2>FlyNovel</h2>
-      <p>开发文档 v1.0.0</p>
+      <p>开发文档 v1.0.3</p>
     </div>
     <nav>
       <a href="#overview">1. 项目概览</a>
@@ -247,6 +247,7 @@
     <h1>FlyNovel 开发文档</h1>
     <p>轻量桌面小说阅读器 — 支持 Legado 书源、本地 TXT/EPUB、离线缓存</p>
     <div class="meta">
+      <span>v1.0.3</span>
       <span>Electron 34</span>
       <span>React 18</span>
       <span>TypeScript 5.7</span>
@@ -265,7 +266,7 @@
       <li><strong>多源搜索</strong>：多书源并发搜索，流式返回结果，支持书源匹配质量学习排序</li>
       <li><strong>本地阅读</strong>：打开本地 TXT / EPUB 文件，自动编码检测与章节切分</li>
       <li><strong>离线缓存</strong>：章节正文存入 SQLite，断网可读已缓存章节；支持整本缓存与导出 TXT</li>
-      <li><strong>阅读体验</strong>：纸感 / 护眼 / 夜间三主题，系统字体选择，字号 / 行距 / 版心可调</li>
+      <li><strong>阅读体验</strong>：纸感 / 护眼 / 夜间三主题，系统字体选择，字号 / 行距可调；正文全宽铺满，左右仅留少量边距；支持 ← / → 键盘翻章</li>
       <li><strong>实用功能</strong>：老板键一键隐藏、自动滚屏、正文净化规则、护眼/久坐提醒、版本更新检查</li>
       <li><strong>贴心细节</strong>：书架显示上次阅读时间、侧栏底部每 5 分钟轮换阅读短句</li>
     </ul>
@@ -375,7 +376,9 @@
 ├── <span class="file">tsconfig.json</span>                     <span class="desc"># 根 TS 配置（引用 node + web）</span>
 ├── <span class="file">tsconfig.node.json</span>                <span class="desc"># 主进程 + preload TS 配置</span>
 ├── <span class="file">tsconfig.web.json</span>                 <span class="desc"># 渲染进程 + shared TS 配置</span>
-├── <span class="dir">build/</span>                             <span class="desc"># 打包资源（图标）</span>
+├── <span class="dir">docs/</span>                            <span class="desc"># 开发文档</span>
+│   └── <span class="file">development.html</span>            <span class="desc"># 本页（架构、IPC、更新记录等）</span>
+├── <span class="file">.npmrc</span>                            <span class="desc"># npm / Electron 国内镜像配置</span>
 │   ├── <span class="file">icon.png</span>
 │   └── <span class="file">icon.icns</span>
 ├── <span class="dir">scripts/</span>                           <span class="desc"># 辅助脚本</span>
@@ -712,8 +715,8 @@
         <tbody>
           <tr><td><span class="badge badge-purple">书架</span></td><td><code>ShelfView.tsx</code></td><td>书籍列表（可按最近阅读 / 加入时间排序）、封面展示、<strong>上次阅读相对时间</strong>（formatLastReadLabel）、缓存徽章、操作按钮（打开 / 导入本地 / 更新 / 全部更新 / 换源 / 缓存 / 取消缓存 / 导出 TXT / 移除）</td></tr>
           <tr><td><span class="badge badge-blue">搜书</span></td><td><code>SearchView.tsx</code></td><td>搜索输入框、进度条、搜索历史标签（点击重搜 / 单条删除 / 清空）、结果网格（封面 + 书名 + 作者 + 书源 + 最新章）</td></tr>
-          <tr><td><span class="badge badge-green">书源</span></td><td><code>SourcesView.tsx</code></td><td>统计筛选标签（全部 / 启用 / 禁用 / 可用 / 失效 / 残缺 / 未测）、测试关键词、批量测试当前筛选、URL 导入、书源编辑弹窗（JSON 编辑）、启用切换 / 单测 / 编辑 / 删除</td></tr>
-          <tr><td><span class="badge badge-orange">阅读</span></td><td><code>ReaderView.tsx</code></td><td>侧栏虚拟目录（VirtualList）、正文滚动与进度持久化、主题切换（纸感 / 护眼 / 夜间）、字体选择、字号 / 行距 / 版心滑块、自动滚屏（双击启动 / 单击停止）、右键选中文字加入净化</td></tr>
+          <tr><td><span class="badge badge-green">书源</span></td><td><code>SourcesView.tsx</code></td><td>统计筛选标签（全部 / 启用 / 禁用 / 可用 / 失效 / 残缺 / 未测）、测试关键词、批量测试当前筛选、URL 导入、<strong>按当前筛选导出 JSON</strong>、书源编辑弹窗（JSON 编辑）、启用切换 / 单测 / 编辑 / 删除</td></tr>
+          <tr><td><span class="badge badge-orange">阅读</span></td><td><code>ReaderView.tsx</code></td><td>侧栏虚拟目录（VirtualList）、正文全宽滚动与进度持久化、主题切换（纸感 / 护眼 / 夜间）、字体选择、字号 / 行距滑块、← / → 方向键翻章、自动滚屏（双击启动 / 单击停止）、右键选中文字加入净化</td></tr>
           <tr><td><span class="badge badge-blue">设置</span></td><td><code>SettingsView.tsx</code></td><td>老板键（录制 + 启用）、<strong>护眼提醒</strong>（开关 + 间隔选择：1分钟/30分钟/1小时/2小时/5小时/10小时）、预加载章节数、网络请求并发数、正文净化规则列表管理</td></tr>
           <tr><td><span class="badge badge-purple">关于</span></td><td><code>AboutView.tsx</code></td><td>应用信息展示、检查更新（Gitee Releases）</td></tr>
         </tbody>
@@ -958,7 +961,7 @@ interface ShelfBook {
     <pre><code>interface ReaderSettings {
   fontSize: number       // 字号 (px)
   lineHeight: number     // 行高倍数
-  pageWidth: number      // 版心宽度 (px)
+  pageWidth: number      // 版心宽度 (px)，保留于设置 schema，阅读页已不再使用
   theme: 'paper' | 'night' | 'green'
   fontFamily: string     // 字体族
   purifyRules: string[]  // 正文净化规则
@@ -1083,6 +1086,7 @@ npm run dist:linux</code></pre>
     </ul>
 
     <h3>11.2 快速开始</h3>
+    <p>仓库已配置 <code>.npmrc</code> 使用 npmmirror 镜像，国内环境一般可直接 <code>npm install</code>。</p>
     <pre><code># 克隆仓库
 git clone https://gitee.com/wucc513721/fly-novel.git
 cd fly-novel
@@ -1176,32 +1180,34 @@ npm run dev</code></pre>
   <section id="changelog">
     <h2><span class="icon">📝</span> 13. 更新记录</h2>
 
-    <h4><code>08d7bde</code> 增加护眼提醒</h4>
-    <p>阅读久了可以让眼睛休息一下。</p>
+    <h4>2026-08-18 · v1.0.3 — 阅读页全宽布局与键盘翻章</h4>
     <ul>
-      <li>新增 <code>useEyeCareReminder</code> Hook：仅在阅读页且窗口可见时累计阅读时长，达到设定间隔后弹「护眼提醒」对话框</li>
-      <li><strong>与老板键联动</strong>：老板键隐藏时自动暂停计时并关闭提醒弹窗，避免旁人察觉</li>
-      <li><code>AppPrefs</code> 新增 <code>eyeCareEnabled</code> / <code>eyeCareIntervalMinutes</code> 配置项，间隔可选 1 分钟 / 30 分钟 / 1 / 2 / 5 / 10 小时</li>
-      <li>主进程新增 <code>app:boss-visibility</code> 广播事件，preload 暴露 <code>onBossVisibility()</code> 订阅方法</li>
-      <li>设置页新增「护眼提醒」设置区（开关 + 间隔下拉）</li>
+      <li>阅读页正文改为<strong>全宽铺满</strong>可用区域：移除版心宽度限制、全屏宽布局分支及阅读设置中的「版心」滑块；目录开合、普通窗口与全屏均使用同一套左右留白（约 20px）</li>
+      <li>支持 <strong>← / → 方向键</strong>翻章；在输入框、文本域、下拉框或可编辑区域内不拦截；上一章 / 下一章按钮增加快捷键提示</li>
+      <li>同步更新开发文档版本号与更新记录格式</li>
     </ul>
 
-    <h4><code>8899b4c</code> 书架上次阅读时间 + 侧栏阅读短句</h4>
+    <h4>2026-08-17 · v1.0.2 — 书源导出与国内镜像</h4>
     <ul>
-      <li>书架书籍条目显示「上次阅读」相对时间（刚刚 / N分钟前 / N小时前 / N天前 / N年前 / 暂未阅读），由 <code>formatLastRead.ts</code> 实现</li>
-      <li>软件界面左下角新增 <code>SidebarMotto</code> 组件，展示阅读向短句，每 5 分钟自动切换（15 句短句库，同一时段保持稳定）</li>
+      <li>书源管理页新增「导出」：将<strong>当前顶部筛选分类</strong>下的书源导出为 JSON 文件</li>
+      <li>修复 Windows 10 编辑书源弹窗底部「取消 / 保存」按钮错位（弹窗固定高度、编辑区可收缩、统一按钮边框与行高）</li>
+      <li><code>.npmrc</code> 默认指向 npmmirror（registry、Electron 与 electron-builder 二进制镜像），加速国内 <code>npm install</code> 与 Electron 下载</li>
     </ul>
 
-    <h4><code>9da3f6f</code> Bug 修复：章节更新误报</h4>
+    <h4>2026-08-15 · v1.0.1 — 功能增强与体验优化</h4>
     <ul>
-      <li>修复章节未更新时也提示「更新 N 章」的问题</li>
-      <li><code>matchChapter.ts</code> 新增 <code>readableChapters()</code>（过滤分卷等不可读章节）、<code>countAddedChapters()</code>（旧目录为空时返回 0，避免首次拉取整本目录误报为新增）、<code>catalogUpdateKind()</code>（区分 none / first / added，含末章 URL 变化检测）</li>
+      <li><strong>内置网址净化</strong>：默认净化正文中的 <code>http(s)://</code> 类网址（如 <code>bcd.com/aaa/bbb.html</code>）</li>
+      <li><strong>开发文档</strong>：首次编写本页详细开发文档（<code>docs/development.html</code>）</li>
+      <li><strong>护眼提醒</strong>：阅读页累计阅读时长，达到设定间隔后弹窗提醒；老板键隐藏时暂停计时并关闭弹窗；设置页可配置开关与间隔（1 分钟 / 30 分钟 / 1 / 2 / 5 / 10 小时）</li>
+      <li><strong>书架上次阅读时间</strong>：条目显示相对时间（刚刚 / N分钟前 / … / 暂未阅读）</li>
+      <li><strong>侧栏阅读短句</strong>：左下角 <code>SidebarMotto</code> 每 5 分钟轮换一句（15 句库）</li>
+      <li><strong>Bug 修复</strong>：章节未更新时误报「更新 N 章」；<code>matchChapter.ts</code> 区分 none / first / added 更新类型</li>
+      <li><strong>轻量检查更新</strong>：对比 Gitee Releases 语义化版本，仅提示不自动下载；关于页可手动检查并跳转发行页</li>
     </ul>
 
-    <h4><code>7481afc</code> 轻量检查更新</h4>
+    <h4>2026-08-15 · v1.0.0 — 初始发布</h4>
     <ul>
-      <li>基于 Gitee 发行版（Releases API）的版本检查，对比语义化版本号后仅提示，不自动下载</li>
-      <li>新增 IPC 通道 <code>app:checkUpdate</code> / <code>app:getVersion</code> / <code>app:openExternal</code>，关于页可手动触发检查并跳转下载页</li>
+      <li>首个版本：Legado 书源导入与搜索、书架、本地 TXT/EPUB、章节缓存、阅读设置、老板键、正文净化等核心能力</li>
     </ul>
   </section>
 

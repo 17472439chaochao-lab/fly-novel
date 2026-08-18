@@ -1,6 +1,13 @@
 # FlyNovel
 
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://gitee.com/wucc513721/fly-novel)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![version](https://img.shields.io/badge/version-v1.0.3-blueviolet)](docs/development.html#changelog)
+[![stack](https://img.shields.io/badge/UI-Electron%20%2B%20React-orange)](docs/development.html)
+
 轻量桌面小说阅读器，支持导入 **Legado（阅读）** 文本书源，提供搜索、书架、离线缓存与阅读设置。
+
+架构、IPC、数据库与更新记录见 **[开发文档](docs/development.html)**。
 
 - **作者：** 飞鸟传说
 - **QQ：** 17472439
@@ -10,13 +17,14 @@
 
 ## 功能概览
 
-- 导入 Legado 书源（本地文件 / URL 订阅）
+- 导入 Legado 书源（本地文件 / URL 订阅），支持按当前筛选导出 JSON
 - 多书源并发搜索、书源测试与管理
-- 书架、换源、全部更新
+- 书架、换源、全部更新；条目显示上次阅读相对时间
 - 打开本地 TXT / EPUB（自动分章，书架标注「本地」；无需换源与在线缓存）
-- 阅读进度、目录、正文净化规则
-- 章节离线缓存（SQLite），断网可读已缓存章节
-- 阅读主题：纸感 / 护眼 / 夜间
+- 阅读进度、目录、正文净化（含内置网址规则）；← / → 键盘翻章
+- 章节离线缓存（SQLite），断网可读已缓存章节；支持整本缓存与导出 TXT
+- 阅读主题：纸感 / 护眼 / 夜间；正文全宽铺满，字号 / 行距 / 系统字体可调
+- 老板键一键隐藏、自动滚屏、护眼/久坐提醒、Gitee 发行版检查更新
 
 ## 技术栈
 
@@ -50,13 +58,15 @@ npx @electron/rebuild -f -w better-sqlite3
 
 ## 安装依赖
 
+仓库已配置 `.npmrc`（npmmirror 的 npm / Electron / electron-builder 镜像），国内环境一般可直接安装：
+
 ```bash
 git clone https://gitee.com/wucc513721/fly-novel.git
 cd fly-novel
 npm install
 ```
 
-如 Electron 二进制下载失败，可使用国内镜像后重试：
+如 Electron 二进制仍下载失败，可显式指定镜像后重试：
 
 ```bash
 export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
@@ -124,24 +134,6 @@ npm run dist:dir
 
 在 macOS/Linux 上交叉打包 Windows 可能受限于代码签名与部分工具；**推荐在 Windows 机器上打包**。
 
-1. 在 `package.json` 的 `build` 中增加（或已通过脚本传入）：
-
-```json
-"win": {
-  "target": ["nsis", "zip"],
-  "icon": "build/icon.png"
-}
-```
-
-2. 执行：
-
-```bash
-npm run build
-npx electron-builder --win
-```
-
-或使用已提供脚本：
-
 ```bash
 npm run dist:win
 ```
@@ -187,6 +179,7 @@ npx electron-builder --mac --win --linux
 | @xmldom/xmldom + xpath | XML / XPath | MIT |
 | jsonpath-plus | JSONPath | MIT |
 | iconv-lite | 编码转换 | MIT |
+| jszip | EPUB（ZIP）解压 | MIT / GPLv3 |
 
 ---
 
@@ -210,15 +203,20 @@ npx electron-builder --mac --win --linux
 ```
 novel/
 ├── build/                 # 图标等打包资源
+├── docs/                  # 开发文档
+│   └── development.html
 ├── scripts/               # Electron 二进制修复等脚本
 ├── src/
 │   ├── main/              # Electron 主进程、书源引擎、SQLite
 │   ├── preload/           # 预加载桥
 │   ├── renderer/          # React 界面
 │   └── shared/            # 共享类型与关于信息
+├── .npmrc                 # npm / Electron 国内镜像
 ├── package.json
 └── README.md
 ```
+
+更完整的模块说明见 [开发文档](docs/development.html)。
 
 ---
 
@@ -232,6 +230,19 @@ A: 数据固定在 `Application Support/fly-novel`。若曾因改名落到 `FlyN
 
 **Q: 上传 Git 要注意什么？**  
 A: 已配置 `.gitignore`，勿提交 `node_modules/`、`out/`、`release/`、本地数据库与系统文件。
+
+---
+
+## 更新记录
+
+近期变更（倒序）：
+
+- **2026-08-18 · v1.0.3** — 阅读页正文全宽铺满；← / → 键盘翻章
+- **2026-08-17 · v1.0.2** — 书源按筛选导出 JSON；Windows 书源编辑弹窗按钮错位修复；默认国内镜像
+- **2026-08-15 · v1.0.1** — 网址净化、护眼提醒、书架上次阅读时间、侧栏短句、章节更新误报修复、Gitee 检查更新
+- **2026-08-15 · v1.0.0** — 初始发布
+
+详细条目见 [开发文档 · 更新记录](docs/development.html#changelog)。
 
 ---
 
