@@ -94,6 +94,42 @@ export interface BookSource {
   flyMatchSamples?: number
 }
 
+/** 内置在线书源仓库元数据（面板展示与请求回传共用） */
+export interface SourceRepoMeta {
+  id: string
+  name: string
+  desc: string
+  /**
+   * json：响应直接是书源 JSON（数组或单个对象）；
+   * sub：订阅列表（每行一个书源 JSON 文件的 URL，递归拉取）；
+   * auto：先按 JSON 解析，失败再按订阅列表展开（自定义 URL 用）。
+   */
+  kind: 'json' | 'sub' | 'auto'
+  url: string
+  /** 备用地址：主地址失败时自动尝试 */
+  alt?: string
+}
+
+/** 在线获取书源的仓库请求（前端勾选内置仓库或追加自定义 URL 后回传主进程） */
+export interface OnlineRepoRequest {
+  id: string
+  name?: string
+  kind?: 'json' | 'sub' | 'auto'
+  url?: string
+  alt?: string
+}
+
+/** 在线获取书源进度事件载荷 */
+export interface OnlineFetchProgress {
+  repoName: string
+  done: number
+  total: number
+  /** 目前已累计命中的去重书源数 */
+  found: number
+  phase: 'start' | 'done'
+  ok?: boolean
+}
+
 /** 速度标签选项（界面展示用） */
 export const SOURCE_SPEED_TAG_OPTIONS: { id: SourceSpeedTag; label: string }[] = [
   { id: 'turbo', label: '极速' },
@@ -367,7 +403,6 @@ export interface AppPrefs {
 
 /** 护眼提醒可选间隔（分钟） */
 export const EYE_CARE_INTERVAL_OPTIONS = [
-  { value: 1, label: '1 分钟' },
   { value: 30, label: '30 分钟' },
   { value: 60, label: '1 小时' },
   { value: 120, label: '2 小时' },

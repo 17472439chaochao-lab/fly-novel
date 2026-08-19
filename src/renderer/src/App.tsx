@@ -13,6 +13,7 @@ import {
   type SearchBook,
   type SearchProgress,
   type ShelfBook,
+  type ShelfSort,
   type ViewName
 } from '../../shared/types'
 import { ConfirmDialog, type ConfirmOutcome, type ConfirmRequest } from './components/ConfirmDialog'
@@ -29,6 +30,7 @@ import {
   findSameNovelSearchAlts,
   findShelfDuplicates
 } from './utils/shelfMatch'
+import { formatProgressLabel, runWithProgress } from './utils/progress'
 
 /**
  * 由书源 origin 与书籍 URL 生成书架唯一 ID
@@ -40,6 +42,46 @@ function bookId(origin: string, bookUrl: string): string {
 }
 
 /**
+ * 各视图对外暴露的回调集合（扁平命名，供 ref 镜像与稳定包装复用）。
+ * 每次渲染都会把最新闭包写入 viewCbRef.current，稳定包装则持有不变的引用。
+ */
+interface ViewCallbacks {
+  // ShelfView
+  onOpen: (b: ShelfBook) => void
+  onImportLocal: () => void
+  onSortChange: (sort: ShelfSort) => void
+  onUpdate: (b: ShelfBook) => void
+  onUpdateAll: () => void
+  onChangeSource: (b: ShelfBook) => void
+  onCache: (b: ShelfBook) => void
+  onCancelCache: (id: string) => void
+  onExportTxt: (b: ShelfBook) => void
+  onRemove: (id: string) => void
+  onSearch: () => void
+  // SearchView（onSearch 与 ShelfView 同名，这里用 onSearchRun 区分）
+  onSearchRun: () => void
+  onSearchKeyword: (k: string) => void
+  onClearHistory: () => void
+  onRemoveHistory: (k: string) => void
+  onRead: (b: SearchBook) => void
+  // SourcesView
+  onTestKeywordChange: (v: string) => void
+  onTestKeywordCommit: (v: string) => void
+  onImportFile: () => void
+  // SettingsView
+  onPrefsChange: (patch: Partial<AppPrefs>) => void
+  onRemovePurify: (rule: string) => void
+  // ReaderView
+  onBack: () => void
+  onSelectChapter: (i: number) => void
+  onPrev: () => void
+  onNext: () => void
+  onScrollSave: (scrollTop: number) => void
+  onSettingsChange: (s: ReaderSettings) => void
+  onAddPurify: (text: string) => void
+}
+
+/**
  * 应用根组件：管理导航、书架、搜索、书源、设置、阅读与换源等全局状态与 IPC 交互。
  */
 export default function App() {
@@ -48,7 +90,11 @@ export default function App() {
   const [shelf, setShelf] = useState<ShelfBook[]>([])
   const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_SETTINGS)
   const [prefs, setPrefs] = useState<AppPrefs>(DEFAULT_PREFS)
-  const [toast, setToast] = useState('')
+  /** Toast 队列：并发提示依次堆叠展示，各自到期后独立消失 */
+  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
+  const toastIdRef = useRef(0)
+  /** 搜索命中书籍校验期间的持久加载指示（toast 会过期消失，此遮罩保持到校验结束） */
+  const [probeState, setProbeState] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchProgress, setSearchProgress] = useState<SearchProgress | null>(null)
@@ -57,19 +103,20 @@ export default function App() {
   const [reading, setReading] = useState<ShelfBook | null>(null)
   const readingRef = useRef<ShelfBook | null>(null)
   readingRef.current = reading
+  const viewRef = useRef<ViewName>('shelf')
+  viewRef.current = view
   const searchGenRef = useRef(0)
   const chapterLoadGenRef = useRef(0)
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [content, setContent] = useState('')
   const [loadingContent, setLoadingContent] = useState(false)
-  const [shelfBusyId, setShelfBusyId] = useState<string | null>(null)
+  const [shelfBusyIds, setShelfBusyIds] = useState<string[]>([])
   const [shelfUpdatingAll, setShelfUpdatingAll] = useState(false)
   const [shelfUpdateProgress, setShelfUpdateProgress] = useState('')
-  const [cacheBusyId, setCacheBusyId] = useState<string | null>(null)
-  const [cacheProgress, setCacheProgress] = useState('')
-  const pendingExportRef = useRef<{ id: string; name: string } | null>(null)
+  const [cacheBusyIds, setCacheBusyIds] = useState<string[]>([])
+  const [cacheProgressMap, setCacheProgressMap] = useState<Record<string, string>>({})
+  const pendingExportsRef = useRef<Map<string, string>>(new Map())
   const [readerCacheTick, setReaderCacheTick] = useState(0)
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [changeSource, setChangeSource] = useState<{
     book: ShelfBook
     searching: boolean
@@ -80,17 +127,16 @@ export default function App() {
   const changeSourceGenRef = useRef(0)
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
 
-  /** 显示短暂 Toast 提示（约 2.8 秒后自动消失） */
-  const showToast = useCallback((msg: string) => {
-    setToast(msg)
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = setTimeout(() => setToast(''), 2800)
-  }, [])
+  // 最新视图回调镜像：每次渲染刷新，供下方稳定包装读取，避免闭包陈旧与全树重渲染
+  const viewCbRef = useRef<ViewCallbacks | null>(null)
 
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    }
+  /** 显示短暂 Toast 提示（约 2.8 秒后自动消失；多条并发时依次堆叠互不覆盖） */
+  const showToast = useCallback((msg: string) => {
+    const id = ++toastIdRef.current
+    setToasts((prev) => [...prev, { id, text: msg }])
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 2800)
   }, [])
 
   /** 弹出确认对话框并返回用户选择结果 */
@@ -134,6 +180,9 @@ export default function App() {
    * @param next 目标视图名
    */
   const goView = useCallback((next: ViewName) => {
+    if (viewRef.current === 'reader' && next !== 'reader' && readingRef.current) {
+      void window.fly.books.cancelPreload(readingRef.current.id)
+    }
     setView(next)
     if (next !== 'reader') {
       void window.fly.prefs.save({ lastView: next }).then((r) => setPrefs(r.prefs))
@@ -210,10 +259,11 @@ export default function App() {
   useEffect(() => {
     const off = window.fly.shelf.onCacheProgress((p) => {
       if (p.phase === 'start' || p.phase === 'progress') {
-        setCacheBusyId(p.bookId)
-        setCacheProgress(
-          p.total > 0 ? `${p.cached ?? p.done}/${p.total}` : `${p.done}/${p.total}`
-        )
+        setCacheBusyIds((prev) => (prev.includes(p.bookId) ? prev : [...prev, p.bookId]))
+        setCacheProgressMap((prev) => ({
+          ...prev,
+          [p.bookId]: p.total > 0 ? `${p.cached ?? p.done}/${p.total}` : `${p.done}/${p.total}`
+        }))
         setShelf((prev) =>
           prev.map((b) =>
             b.id === p.bookId
@@ -230,15 +280,19 @@ export default function App() {
           )
         )
       } else {
-        setCacheBusyId(null)
-        setCacheProgress('')
-        const pending = pendingExportRef.current
-        if (pending && pending.id === p.bookId) {
-          pendingExportRef.current = null
+        setCacheBusyIds((prev) => prev.filter((id) => id !== p.bookId))
+        setCacheProgressMap((prev) => {
+          const next = { ...prev }
+          delete next[p.bookId]
+          return next
+        })
+        const pendingName = pendingExportsRef.current.get(p.bookId)
+        if (pendingName) {
+          pendingExportsRef.current.delete(p.bookId)
           if (p.phase === 'cancelled') {
             showToast('已取消缓存，导出已中止')
           } else {
-            void runExportTxt(p.bookId, pending.name)
+            void runExportTxt(p.bookId, pendingName)
           }
         }
         void window.fly.shelf.list().then(setShelf)
@@ -284,18 +338,26 @@ export default function App() {
       current: '',
       phase: 'start'
     })
-    const offProgress = window.fly.books.onSearchProgress((p) => {
-      if (gen !== searchGenRef.current) return
-      setSearchProgress(p)
-    })
-    const offPartial = window.fly.books.onSearchPartial((books) => {
-      if (gen !== searchGenRef.current) return
-      const filtered = filterRelevantSearchHits(key, books)
-      if (!filtered.length) return
-      setResults((prev) => dedupeSearchBooks(prev.concat(filtered)))
-    })
     try {
-      const { books, history, sources: nextSources } = await window.fly.books.search(key)
+      const { books, history, sources: nextSources } = await runWithProgress(
+        (track) => {
+          track(
+            window.fly.books.onSearchProgress((p) => {
+              if (gen !== searchGenRef.current) return
+              setSearchProgress(p)
+            })
+          )
+          track(
+            window.fly.books.onSearchPartial((books) => {
+              if (gen !== searchGenRef.current) return
+              const filtered = filterRelevantSearchHits(key, books)
+              if (!filtered.length) return
+              setResults((prev) => dedupeSearchBooks(prev.concat(filtered)))
+            })
+          )
+        },
+        () => window.fly.books.search(key)
+      )
       if (gen !== searchGenRef.current) return
       const cleaned = dedupeSearchBooks(filterRelevantSearchHits(key, books))
       setResults(cleaned)
@@ -311,8 +373,6 @@ export default function App() {
       if (gen !== searchGenRef.current) return
       showToast(`搜索失败：${(e as Error).message}`)
     } finally {
-      offProgress()
-      offPartial()
       if (gen === searchGenRef.current) {
         setSearching(false)
         setSearchProgress(null)
@@ -419,7 +479,7 @@ export default function App() {
    * @param candidate 新书源搜索命中
    */
   async function replaceShelfWithSearchBook(old: ShelfBook, candidate: SearchBook) {
-    setShelfBusyId(old.id)
+    setShelfBusyIds((prev) => (prev.includes(old.id) ? prev : [...prev, old.id]))
     try {
       const info = await window.fly.books.info(candidate.origin, candidate.bookUrl)
       const tocUrl = info.tocUrl || candidate.bookUrl
@@ -452,7 +512,7 @@ export default function App() {
       }
       return newBook
     } finally {
-      setShelfBusyId(null)
+      setShelfBusyIds((prev) => prev.filter((id) => id !== old.id))
     }
   }
 
@@ -465,8 +525,8 @@ export default function App() {
       showToast('本地书籍无需更新')
       return
     }
-    if (shelfBusyId || shelfUpdatingAll) return
-    setShelfBusyId(book.id)
+    if (shelfBusyIds.includes(book.id) || shelfUpdatingAll) return
+    setShelfBusyIds((prev) => (prev.includes(book.id) ? prev : [...prev, book.id]))
     try {
       const info = await window.fly.books.info(book.origin, book.bookUrl)
       const tocUrl = info.tocUrl || book.tocUrl || book.bookUrl
@@ -500,25 +560,25 @@ export default function App() {
     } catch (e) {
       showToast(`更新失败：${(e as Error).message}`)
     } finally {
-      setShelfBusyId(null)
+      setShelfBusyIds((prev) => prev.filter((id) => id !== book.id))
     }
   }
 
   /** 批量更新书架上全部在线书籍 */
   async function updateAllShelfBooks() {
-    if (!shelf.length || shelfUpdatingAll || shelfBusyId) return
+    if (!shelf.length || shelfUpdatingAll) return
     setShelfUpdatingAll(true)
     setShelfUpdateProgress(`0/${shelf.length}`)
     const beforeLens = new Map(
       shelf.map((b) => [b.id, readableChapters(b.chapters).length] as const)
     )
-    const off = window.fly.shelf.onUpdateProgress((p) => {
-      setShelfUpdateProgress(
-        p.phase === 'done' ? '完成' : `${p.done}/${p.total}${p.current ? ` · ${p.current}` : ''}`
-      )
-    })
     try {
-      const next = await window.fly.shelf.updateAll()
+      const next = await runWithProgress(
+        (track) => {
+          track(window.fly.shelf.onUpdateProgress((p) => setShelfUpdateProgress(formatProgressLabel(p))))
+        },
+        () => window.fly.shelf.updateAll()
+      )
       setShelf(next)
       let booksWithNew = 0
       let chaptersAdded = 0
@@ -544,7 +604,6 @@ export default function App() {
     } catch (e) {
       showToast(`全部更新失败：${(e as Error).message}`)
     } finally {
-      off()
       setShelfUpdatingAll(false)
       setShelfUpdateProgress('')
     }
@@ -593,19 +652,26 @@ export default function App() {
       })
     }
 
-    const offProgress = window.fly.books.onSearchProgress((p) => {
-      if (gen !== changeSourceGenRef.current) return
-      setChangeSource((prev) =>
-        prev && prev.book.id === book.id ? { ...prev, progress: p } : prev
-      )
-    })
-    const offPartial = window.fly.books.onSearchPartial((books) => {
-      if (gen !== changeSourceGenRef.current) return
-      mergeHits(books)
-    })
-
     try {
-      const { books } = await window.fly.books.search(book.name)
+      const { books } = await runWithProgress(
+        (track) => {
+          track(
+            window.fly.books.onSearchProgress((p) => {
+              if (gen !== changeSourceGenRef.current) return
+              setChangeSource((prev) =>
+                prev && prev.book.id === book.id ? { ...prev, progress: p } : prev
+              )
+            })
+          )
+          track(
+            window.fly.books.onSearchPartial((books) => {
+              if (gen !== changeSourceGenRef.current) return
+              mergeHits(books)
+            })
+          )
+        },
+        () => window.fly.books.search(book.name)
+      )
       if (gen !== changeSourceGenRef.current) return
       const candidates = filterChangeSourceCandidates(book, books).filter(
         (b) => !(b.origin === book.origin && b.bookUrl === book.bookUrl)
@@ -622,9 +688,6 @@ export default function App() {
       if (gen !== changeSourceGenRef.current) return
       setChangeSource(null)
       showToast(`换源搜索失败：${(e as Error).message}`)
-    } finally {
-      offProgress()
-      offPartial()
     }
   }
 
@@ -767,7 +830,10 @@ export default function App() {
    * 探测搜索命中的详情与目录；可读时返回可入库的书架书籍
    * @param b 搜索命中
    */
-  async function probeSearchBook(b: SearchBook): Promise<
+  async function probeSearchBook(
+    b: SearchBook,
+    onStage?: (stage: string) => void
+  ): Promise<
     | { ok: true; item: ShelfBook }
     | { ok: false; message: string }
   > {
@@ -781,6 +847,7 @@ export default function App() {
       let infoLast = b.lastChapter
       let infoKind = b.kind
       try {
+        onStage?.('正在获取书籍详情…')
         const info = await window.fly.books.info(b.origin, b.bookUrl)
         tocUrl = info.tocUrl || b.bookUrl
         infoName = info.name || b.name
@@ -789,8 +856,10 @@ export default function App() {
         infoIntro = info.intro || b.intro
         infoLast = info.lastChapter || b.lastChapter
         infoKind = info.kind || b.kind
+        onStage?.('正在获取目录…')
         chapters = await window.fly.books.toc(b.origin, tocUrl)
       } catch {
+        onStage?.('正在获取目录…')
         chapters = await window.fly.books.toc(b.origin, b.bookUrl)
         tocUrl = b.bookUrl
       }
@@ -829,48 +898,58 @@ export default function App() {
    * @param b 搜索命中
    */
   async function readSearchBook(b: SearchBook) {
-    showToast('正在校验书籍…')
-    const first = await probeSearchBook(b)
-    if (first.ok) {
-      const next = await window.fly.shelf.upsert(first.item)
-      setShelf(next)
-      setSources(await window.fly.sources.list())
-      const saved = next.find((x) => x.id === first.item.id) || first.item
-      void openBook(saved)
-      return
+    // 用持久遮罩代替短 toast：详情+目录可能耗时数十秒，遮罩保持到校验结束并分阶段提示
+    setProbeState('正在校验书籍…')
+    try {
+      const first = await probeSearchBook(b, setProbeState)
+      if (first.ok) {
+        setProbeState(null)
+        const next = await window.fly.shelf.upsert(first.item)
+        setShelf(next)
+        setSources(await window.fly.sources.list())
+        const saved = next.find((x) => x.id === first.item.id) || first.item
+        void openBook(saved)
+        return
+      }
+
+      setProbeState(null)
+      const alts = findSameNovelSearchAlts(results, b)
+      const action = await askConfirm({
+        title: '无法阅读',
+        message: `《${b.name}》（${b.originName || '未知源'}）\n${first.message}`,
+        confirmText: '仅加书架',
+        cancelText: '取消',
+        extraText: alts.length ? `尝试其他源（${alts.length}）` : undefined
+      })
+
+      if (action === 'cancel') return
+
+      if (action === 'confirm') {
+        await addToShelf(b)
+        return
+      }
+
+      // 尝试当前搜索结果中的同名其他源
+      for (let i = 0; i < alts.length; i++) {
+        const alt = alts[i]
+        setProbeState(`正在尝试其他源（${i + 1}/${alts.length}）：${alt.originName || '未知'}…`)
+        const probed = await probeSearchBook(alt, setProbeState)
+        if (!probed.ok) continue
+        setProbeState(null)
+        const next = await window.fly.shelf.upsert(probed.item)
+        setShelf(next)
+        setSources(await window.fly.sources.list())
+        const saved = next.find((x) => x.id === probed.item.id) || probed.item
+        showToast(`已改用「${alt.originName}」`)
+        void openBook(saved)
+        return
+      }
+      setProbeState(null)
+      showToast('同名其他源均无法获取目录')
+    } catch (e) {
+      setProbeState(null)
+      showToast(`校验失败：${(e as Error).message || '未知错误'}`)
     }
-
-    const alts = findSameNovelSearchAlts(results, b)
-    const action = await askConfirm({
-      title: '无法阅读',
-      message: `《${b.name}》（${b.originName || '未知源'}）\n${first.message}`,
-      confirmText: '仅加书架',
-      cancelText: '取消',
-      extraText: alts.length ? `尝试其他源（${alts.length}）` : undefined
-    })
-
-    if (action === 'cancel') return
-
-    if (action === 'confirm') {
-      await addToShelf(b)
-      return
-    }
-
-    // 尝试当前搜索结果中的同名其他源
-    for (let i = 0; i < alts.length; i++) {
-      const alt = alts[i]
-      showToast(`正在尝试其他源（${i + 1}/${alts.length}）：${alt.originName || '未知'}`)
-      const probed = await probeSearchBook(alt)
-      if (!probed.ok) continue
-      const next = await window.fly.shelf.upsert(probed.item)
-      setShelf(next)
-      setSources(await window.fly.sources.list())
-      const saved = next.find((x) => x.id === probed.item.id) || probed.item
-      showToast(`已改用「${alt.originName}」`)
-      void openBook(saved)
-      return
-    }
-    showToast('同名其他源均无法获取目录')
   }
 
   /** 通过系统文件选择器导入本地书籍并可选立即打开 */
@@ -991,6 +1070,234 @@ export default function App() {
     await window.fly.settings.save(next)
   }
 
+  // 将本次渲染的最新回调实现写入 ref（渲染期同步赋值，保证事件触发时调用的是最新闭包）
+  viewCbRef.current = {
+    onOpen: (b) => void openBook(b),
+    onImportLocal: () => void importLocalBook(),
+    onSortChange: (sort) => {
+      setPrefs((p) => ({ ...p, shelfSort: sort }))
+      void window.fly.prefs.save({ shelfSort: sort }).then((r) => setPrefs(r.prefs))
+    },
+    onUpdate: (b) => void updateShelfBook(b),
+    onUpdateAll: () => void updateAllShelfBooks(),
+    onChangeSource: (b) => void openChangeSource(b),
+    onCache: async (b) => {
+      if (isLocalBook(b)) {
+        showToast('本地书籍无需缓存')
+        return
+      }
+      if (cacheBusyIds.includes(b.id)) return
+      setCacheBusyIds((prev) => [...prev, b.id])
+      try {
+        const next = await window.fly.shelf.cacheBook(b.id)
+        setShelf(next)
+        const info = next.find((x) => x.id === b.id)?.cache
+        if (info?.status === 'full') showToast(`《${b.name}》已全部缓存`)
+        else showToast(`《${b.name}》缓存 ${info?.cached ?? 0}/${info?.total ?? 0}`)
+      } catch (e) {
+        showToast(`缓存失败：${(e as Error).message}`)
+        setShelf(await window.fly.shelf.list())
+      } finally {
+        setCacheBusyIds((prev) => prev.filter((id) => id !== b.id))
+        setCacheProgressMap((prev) => {
+          const n = { ...prev }
+          delete n[b.id]
+          return n
+        })
+      }
+    },
+    onCancelCache: async (id) => {
+      pendingExportsRef.current.delete(id)
+      const next = await window.fly.shelf.cancelCache(id)
+      setShelf(next)
+      setCacheBusyIds((prev) => prev.filter((x) => x !== id))
+      setCacheProgressMap((prev) => {
+        const n = { ...prev }
+        delete n[id]
+        return n
+      })
+      showToast('已取消缓存')
+    },
+    onExportTxt: async (b) => {
+      if (isLocalBook(b)) {
+        showToast('本地书籍请直接使用原文件')
+        return
+      }
+      const info =
+        b.cache ||
+        (await window.fly.shelf.cacheStatus(b.id)) || {
+          bookId: b.id,
+          total: 0,
+          cached: 0,
+          status: 'none' as const
+        }
+      const fullyCached =
+        info.status === 'full' || (info.total > 0 && info.cached >= info.total)
+
+      if (fullyCached) {
+        await runExportTxt(b.id, b.name)
+        return
+      }
+
+      const cachedLabel = info.total > 0 ? `（当前 ${info.cached}/${info.total}）` : ''
+      const result = await askConfirm({
+        title: '需要先缓存',
+        message: `《${b.name}》尚未全部缓存${cachedLabel}。确认后将先缓存全书，缓存完成后自动导出为 TXT。`,
+        confirmText: '开始缓存并导出',
+        cancelText: '取消'
+      })
+      if (result !== 'confirm') return
+
+      pendingExportsRef.current.set(b.id, b.name)
+      showToast('缓存完成后将自动导出')
+
+      if (cacheBusyIds.includes(b.id) || info.status === 'caching') {
+        return
+      }
+
+      setCacheBusyIds((prev) => [...prev, b.id])
+      try {
+        const next = await window.fly.shelf.cacheBook(b.id)
+        setShelf(next)
+        if (pendingExportsRef.current.has(b.id)) {
+          pendingExportsRef.current.delete(b.id)
+          await runExportTxt(b.id, b.name)
+        }
+      } catch (e) {
+        pendingExportsRef.current.delete(b.id)
+        showToast(`缓存失败：${(e as Error).message}`)
+        setShelf(await window.fly.shelf.list())
+      } finally {
+        setCacheBusyIds((prev) => prev.filter((id) => id !== b.id))
+        setCacheProgressMap((prev) => {
+          const n = { ...prev }
+          delete n[b.id]
+          return n
+        })
+      }
+    },
+    onRemove: async (id) => {
+      const book = shelf.find((b) => b.id === id)
+      const result = await askConfirm({
+        title: '移出书架',
+        message: book
+          ? `确定从书架移除《${book.name}》？本地缓存也会一并删除。`
+          : '确定从书架移除这本书？',
+        confirmText: '移除',
+        danger: true
+      })
+      if (result !== 'confirm') return
+      const next = await window.fly.shelf.remove(id)
+      setShelf(next)
+      showToast(book ? `已移除《${book.name}》` : '已移除')
+    },
+    onSearch: () => goView('search'),
+    onSearchRun: () => void runSearch(),
+    onSearchKeyword: (k) => void runSearch(k),
+    onClearHistory: () => void clearSearchHistory(),
+    onRemoveHistory: (k) => void removeSearchHistoryItem(k),
+    onRead: (b) => void readSearchBook(b),
+    onTestKeywordChange: (v) => {
+      setPrefs((p) => ({ ...p, sourceTestKeyword: v }))
+    },
+    onTestKeywordCommit: (v) => {
+      void window.fly.prefs.save({ sourceTestKeyword: v }).then((r) => setPrefs(r.prefs))
+    },
+    onImportFile: () => void onImportFile(),
+    onPrefsChange: async (patch) => {
+      const r = await window.fly.prefs.save(patch)
+      setPrefs(r.prefs)
+      if (patch.bossKey !== undefined || patch.bossKeyEnabled !== undefined) {
+        showToast(r.bossKey.message)
+      }
+    },
+    onRemovePurify: async (rule) => {
+      const next = await window.fly.settings.removePurify(rule)
+      setSettings(next)
+      showToast('已移除净化规则')
+    },
+    onBack: () => goView('shelf'),
+    onSelectChapter: (i) => {
+      if (reading) void loadChapter(reading, i, chapters, { resetScroll: true })
+    },
+    onPrev: () => {
+      if (!reading) return
+      if (reading.chapterIndex > 0)
+        void loadChapter(reading, reading.chapterIndex - 1, chapters, { resetScroll: true })
+    },
+    onNext: () => {
+      if (!reading) return
+      if (reading.chapterIndex < chapters.length - 1)
+        void loadChapter(reading, reading.chapterIndex + 1, chapters, { resetScroll: true })
+    },
+    onScrollSave: (top) => void saveReadingScroll(top),
+    onSettingsChange: (s) => void saveSettings(s),
+    onAddPurify: async (text) => {
+      const next = await window.fly.settings.addPurify(text)
+      setSettings(next)
+      showToast(`已加入净化：${text.slice(0, 24)}${text.length > 24 ? '…' : ''}`)
+    }
+  }
+
+  // 身份稳定的视图回调包装：仅创建一次，转发到 viewCbRef.current，使 React.memo 真正生效
+  const shelfCb = useMemo<Pick<ViewCallbacks, 'onOpen' | 'onImportLocal' | 'onSortChange' | 'onUpdate' | 'onUpdateAll' | 'onChangeSource' | 'onCache' | 'onCancelCache' | 'onExportTxt' | 'onRemove' | 'onSearch'>>(
+    () => ({
+      onOpen: (b) => void viewCbRef.current!.onOpen(b),
+      onImportLocal: () => viewCbRef.current!.onImportLocal(),
+      onSortChange: (s) => viewCbRef.current!.onSortChange(s),
+      onUpdate: (b) => void viewCbRef.current!.onUpdate(b),
+      onUpdateAll: () => viewCbRef.current!.onUpdateAll(),
+      onChangeSource: (b) => void viewCbRef.current!.onChangeSource(b),
+      onCache: (b) => void viewCbRef.current!.onCache(b),
+      onCancelCache: (id) => viewCbRef.current!.onCancelCache(id),
+      onExportTxt: (b) => void viewCbRef.current!.onExportTxt(b),
+      onRemove: (id) => void viewCbRef.current!.onRemove(id),
+      onSearch: () => viewCbRef.current!.onSearch()
+    }),
+    []
+  )
+
+  const searchCb = useMemo<Pick<ViewCallbacks, 'onSearch' | 'onSearchKeyword' | 'onClearHistory' | 'onRemoveHistory' | 'onRead'>>(
+    () => ({
+      onSearch: () => viewCbRef.current!.onSearchRun(),
+      onSearchKeyword: (k) => viewCbRef.current!.onSearchKeyword(k),
+      onClearHistory: () => viewCbRef.current!.onClearHistory(),
+      onRemoveHistory: (k) => viewCbRef.current!.onRemoveHistory(k),
+      onRead: (b) => void viewCbRef.current!.onRead(b)
+    }),
+    []
+  )
+
+  const sourcesCb = useMemo<Pick<ViewCallbacks, 'onTestKeywordChange' | 'onTestKeywordCommit' | 'onImportFile'>>(
+    () => ({
+      onTestKeywordChange: (v) => viewCbRef.current!.onTestKeywordChange(v),
+      onTestKeywordCommit: (v) => viewCbRef.current!.onTestKeywordCommit(v),
+      onImportFile: () => viewCbRef.current!.onImportFile()
+    }),
+    []
+  )
+
+  const settingsCb = useMemo<Pick<ViewCallbacks, 'onPrefsChange' | 'onRemovePurify'>>(
+    () => ({
+      onPrefsChange: (p) => void viewCbRef.current!.onPrefsChange(p),
+      onRemovePurify: (r) => void viewCbRef.current!.onRemovePurify(r)
+    }),
+    []
+  )
+
+  const readerCb = useMemo<Pick<ViewCallbacks, 'onBack' | 'onSelectChapter' | 'onPrev' | 'onNext' | 'onScrollSave' | 'onSettingsChange' | 'onAddPurify'>>(
+    () => ({
+      onBack: () => viewCbRef.current!.onBack(),
+      onSelectChapter: (i) => viewCbRef.current!.onSelectChapter(i),
+      onPrev: () => viewCbRef.current!.onPrev(),
+      onNext: () => viewCbRef.current!.onNext(),
+      onScrollSave: (t) => viewCbRef.current!.onScrollSave(t),
+      onSettingsChange: (s) => viewCbRef.current!.onSettingsChange(s),
+      onAddPurify: (t) => void viewCbRef.current!.onAddPurify(t)
+    }),
+    []
+  )
+
   if (view === 'reader' && reading) {
     return (
       <>
@@ -1001,25 +1308,23 @@ export default function App() {
           loading={loadingContent}
           settings={settings}
           cacheTick={readerCacheTick}
-          onBack={() => goView('shelf')}
-          onSelectChapter={(i) => void loadChapter(reading, i, chapters, { resetScroll: true })}
-          onPrev={() => {
-            if (reading.chapterIndex > 0)
-              void loadChapter(reading, reading.chapterIndex - 1, chapters, { resetScroll: true })
-          }}
-          onNext={() => {
-            if (reading.chapterIndex < chapters.length - 1)
-              void loadChapter(reading, reading.chapterIndex + 1, chapters, { resetScroll: true })
-          }}
-          onScrollSave={(top) => void saveReadingScroll(top)}
-          onSettingsChange={(s) => void saveSettings(s)}
-          onAddPurify={async (text) => {
-            const next = await window.fly.settings.addPurify(text)
-            setSettings(next)
-            showToast(`已加入净化：${text.slice(0, 24)}${text.length > 24 ? '…' : ''}`)
-          }}
+          onBack={readerCb.onBack}
+          onSelectChapter={readerCb.onSelectChapter}
+          onPrev={readerCb.onPrev}
+          onNext={readerCb.onNext}
+          onScrollSave={readerCb.onScrollSave}
+          onSettingsChange={readerCb.onSettingsChange}
+          onAddPurify={readerCb.onAddPurify}
         />
-        {toast ? <div className="toast">{toast}</div> : null}
+        {toasts.length ? (
+          <div className="toast-stack" role="status" aria-live="polite">
+            {toasts.map((t) => (
+              <div key={t.id} className="toast">
+                {t.text}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {confirmReq ? <ConfirmDialog request={confirmReq} onClose={closeConfirm} /> : null}
       </>
     )
@@ -1061,130 +1366,22 @@ export default function App() {
             <ShelfView
               shelf={shelf}
               sort={prefs.shelfSort || 'lastRead'}
-              busyId={shelfBusyId}
-              cacheBusyId={cacheBusyId}
-              cacheProgress={cacheProgress}
+              busyIds={shelfBusyIds}
+              cacheBusyIds={cacheBusyIds}
+              cacheProgressMap={cacheProgressMap}
               updatingAll={shelfUpdatingAll}
               updateProgress={shelfUpdateProgress}
-              onOpen={(b) => void openBook(b)}
-              onImportLocal={() => void importLocalBook()}
-              onSortChange={(shelfSort) => {
-                setPrefs((p) => ({ ...p, shelfSort }))
-                void window.fly.prefs.save({ shelfSort }).then((r) => setPrefs(r.prefs))
-              }}
-              onUpdate={(b) => void updateShelfBook(b)}
-              onUpdateAll={() => void updateAllShelfBooks()}
-              onChangeSource={(b) => void openChangeSource(b)}
-              onCache={async (b) => {
-                if (isLocalBook(b)) {
-                  showToast('本地书籍无需缓存')
-                  return
-                }
-                if (cacheBusyId) return
-                setCacheBusyId(b.id)
-                try {
-                  const next = await window.fly.shelf.cacheBook(b.id)
-                  setShelf(next)
-                  const info = next.find((x) => x.id === b.id)?.cache
-                  if (info?.status === 'full') showToast(`《${b.name}》已全部缓存`)
-                  else showToast(`《${b.name}》缓存 ${info?.cached ?? 0}/${info?.total ?? 0}`)
-                } catch (e) {
-                  showToast(`缓存失败：${(e as Error).message}`)
-                  setShelf(await window.fly.shelf.list())
-                } finally {
-                  setCacheBusyId(null)
-                  setCacheProgress('')
-                }
-              }}
-              onCancelCache={async (id) => {
-                if (pendingExportRef.current?.id === id) {
-                  pendingExportRef.current = null
-                }
-                const next = await window.fly.shelf.cancelCache(id)
-                setShelf(next)
-                setCacheBusyId(null)
-                setCacheProgress('')
-                showToast('已取消缓存')
-              }}
-              onExportTxt={async (b) => {
-                if (isLocalBook(b)) {
-                  showToast('本地书籍请直接使用原文件')
-                  return
-                }
-                const info =
-                  b.cache ||
-                  (await window.fly.shelf.cacheStatus(b.id)) || {
-                    bookId: b.id,
-                    total: 0,
-                    cached: 0,
-                    status: 'none' as const
-                  }
-                const fullyCached =
-                  info.status === 'full' ||
-                  (info.total > 0 && info.cached >= info.total)
-
-                if (fullyCached) {
-                  await runExportTxt(b.id, b.name)
-                  return
-                }
-
-                const cachedLabel =
-                  info.total > 0 ? `（当前 ${info.cached}/${info.total}）` : ''
-                const result = await askConfirm({
-                  title: '需要先缓存',
-                  message: `《${b.name}》尚未全部缓存${cachedLabel}。确认后将先缓存全书，缓存完成后自动导出为 TXT。`,
-                  confirmText: '开始缓存并导出',
-                  cancelText: '取消'
-                })
-                if (result !== 'confirm') return
-
-                pendingExportRef.current = { id: b.id, name: b.name }
-                showToast('缓存完成后将自动导出')
-
-                if (cacheBusyId === b.id || info.status === 'caching') {
-                  return
-                }
-                if (cacheBusyId) {
-                  showToast('请等待当前缓存结束后再导出')
-                  pendingExportRef.current = null
-                  return
-                }
-
-                setCacheBusyId(b.id)
-                try {
-                  const next = await window.fly.shelf.cacheBook(b.id)
-                  setShelf(next)
-                  // 若进度监听已在完成时处理导出，则 pending 为空。
-                  // 若缓存返回时未走该完成路径，则在此立即导出。
-                  if (pendingExportRef.current?.id === b.id) {
-                    pendingExportRef.current = null
-                    await runExportTxt(b.id, b.name)
-                  }
-                } catch (e) {
-                  pendingExportRef.current = null
-                  showToast(`缓存失败：${(e as Error).message}`)
-                  setShelf(await window.fly.shelf.list())
-                } finally {
-                  setCacheBusyId(null)
-                  setCacheProgress('')
-                }
-              }}
-              onRemove={async (id) => {
-                const book = shelf.find((b) => b.id === id)
-                const result = await askConfirm({
-                  title: '移出书架',
-                  message: book
-                    ? `确定从书架移除《${book.name}》？本地缓存也会一并删除。`
-                    : '确定从书架移除这本书？',
-                  confirmText: '移除',
-                  danger: true
-                })
-                if (result !== 'confirm') return
-                const next = await window.fly.shelf.remove(id)
-                setShelf(next)
-                showToast(book ? `已移除《${book.name}》` : '已移除')
-              }}
-              onSearch={() => goView('search')}
+              onOpen={shelfCb.onOpen}
+              onImportLocal={shelfCb.onImportLocal}
+              onSortChange={shelfCb.onSortChange}
+              onUpdate={shelfCb.onUpdate}
+              onUpdateAll={shelfCb.onUpdateAll}
+              onChangeSource={shelfCb.onChangeSource}
+              onCache={shelfCb.onCache}
+              onCancelCache={shelfCb.onCancelCache}
+              onExportTxt={shelfCb.onExportTxt}
+              onRemove={shelfCb.onRemove}
+              onSearch={shelfCb.onSearch}
             />
           )}
           {view === 'search' && (
@@ -1195,11 +1392,11 @@ export default function App() {
               progress={searchProgress}
               results={results}
               history={searchHistory}
-              onSearch={() => void runSearch()}
-              onSearchKeyword={(k) => void runSearch(k)}
-              onClearHistory={() => void clearSearchHistory()}
-              onRemoveHistory={(k) => void removeSearchHistoryItem(k)}
-              onRead={(b) => void readSearchBook(b)}
+              onSearch={searchCb.onSearch}
+              onSearchKeyword={searchCb.onSearchKeyword}
+              onClearHistory={searchCb.onClearHistory}
+              onRemoveHistory={searchCb.onRemoveHistory}
+              onRead={searchCb.onRead}
             />
           )}
           {view === 'sources' && (
@@ -1207,15 +1404,11 @@ export default function App() {
               sources={sources}
               shelf={shelf}
               testKeyword={prefs.sourceTestKeyword}
-              onTestKeywordChange={(v) => {
-                setPrefs((p) => ({ ...p, sourceTestKeyword: v }))
-              }}
-              onTestKeywordCommit={(v) => {
-                void window.fly.prefs.save({ sourceTestKeyword: v }).then((r) => setPrefs(r.prefs))
-              }}
+              onTestKeywordChange={sourcesCb.onTestKeywordChange}
+              onTestKeywordCommit={sourcesCb.onTestKeywordCommit}
               askConfirm={askConfirm}
               showToast={showToast}
-              onImportFile={() => void onImportFile()}
+              onImportFile={sourcesCb.onImportFile}
               onSourcesChange={setSources}
             />
           )}
@@ -1224,18 +1417,8 @@ export default function App() {
               settings={settings}
               prefs={prefs}
               askConfirm={askConfirm}
-              onPrefsChange={async (patch) => {
-                const r = await window.fly.prefs.save(patch)
-                setPrefs(r.prefs)
-                if (patch.bossKey !== undefined || patch.bossKeyEnabled !== undefined) {
-                  showToast(r.bossKey.message)
-                }
-              }}
-              onRemovePurify={async (rule) => {
-                const next = await window.fly.settings.removePurify(rule)
-                setSettings(next)
-                showToast('已移除净化规则')
-              }}
+              onPrefsChange={settingsCb.onPrefsChange}
+              onRemovePurify={settingsCb.onRemovePurify}
             />
           )}
           {view === 'about' && (
@@ -1243,8 +1426,24 @@ export default function App() {
           )}
         </div>
       </section>
-      {toast ? <div className="toast">{toast}</div> : null}
+      {toasts.length ? (
+        <div className="toast-stack" role="status" aria-live="polite">
+          {toasts.map((t) => (
+            <div key={t.id} className="toast">
+              {t.text}
+            </div>
+          ))}
+        </div>
+      ) : null}
       {confirmReq ? <ConfirmDialog request={confirmReq} onClose={closeConfirm} /> : null}
+      {probeState ? (
+        <div className="probe-overlay" role="status" aria-live="polite">
+          <div className="probe-card">
+            <span className="probe-spinner" aria-hidden="true" />
+            <span>{probeState}</span>
+          </div>
+        </div>
+      ) : null}
       {changeSource ? (
         <div
           className="modal-backdrop"

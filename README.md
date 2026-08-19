@@ -2,7 +2,7 @@
 
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://gitee.com/wucc513721/fly-novel)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![version](https://img.shields.io/badge/version-v1.0.3-blueviolet)](docs/development.html#changelog)
+[![version](https://img.shields.io/badge/version-v1.0.4-blueviolet)](docs/development.html#changelog)
 [![stack](https://img.shields.io/badge/UI-Electron%20%2B%20React-orange)](docs/development.html)
 
 轻量桌面小说阅读器，支持导入 **Legado（阅读）** 文本书源，提供搜索、书架、离线缓存与阅读设置。
@@ -17,13 +17,13 @@
 
 ## 功能概览
 
-- 导入 Legado 书源（本地文件 / URL 订阅），支持按当前筛选导出 JSON
-- 多书源并发搜索、书源测试与管理
+- 导入 Legado 书源（本地文件 / URL 订阅），支持按当前筛选导出 JSON；**一键在线获取**社区书源仓库并自动导入（内置 tickmao / XIU2 / yckceo，支持自定义订阅 URL）
+- 多书源并发搜索、书源测试与管理（测试自动换关键词，避免单词误判；失效源搜索命中自动恢复）
 - 书架、换源、全部更新；条目显示上次阅读相对时间
-- 打开本地 TXT / EPUB（自动分章，书架标注「本地」；无需换源与在线缓存）
+- 打开本地 TXT / EPUB（自动分章，书架标注「本地」；大文件解析在独立 worker 线程，不卡界面）
 - 阅读进度、目录、正文净化（含内置网址规则）；← / → 键盘翻章
 - 章节离线缓存（SQLite），断网可读已缓存章节；支持整本缓存与导出 TXT
-- 阅读主题：纸感 / 护眼 / 夜间；正文全宽铺满，字号 / 行距 / 系统字体可调
+- 阅读主题：纸感 / 护眼 / 夜间；正文全宽铺满，字号 / 行距 / 系统字体可调；窗口缩放 / 全屏 / 目录开合自动保持阅读位置
 - 老板键一键隐藏、自动滚屏、护眼/久坐提醒、Gitee 发行版检查更新
 
 ## 技术栈
@@ -192,9 +192,11 @@ npx electron-builder --mac --win --linux
 - CSS 选择器（`@text` / `@html` / `@href` / `@src` / `@ownText`）
 - XPath、JSONPath
 - `##` 正则替换
-- `{{key}}` / `{{page}}` 与基础 POST
+- `{{key}}` / `{{page}}` 与基础 POST（表达式为自写算术求值器，不含代码执行）
+- `@js` 规则（在 `vm` 隔离沙箱中执行，仅暴露安全全局与 `result`/`baseUrl` 等绑定，禁止访问 `process`/`require`/`fs`/`fetch` 等宿主能力）
+- HTTP 请求校验状态码（4xx / 5xx 视为该源失败，不影响其他源）
 
-暂不支持：复杂 `@js` / WebView / 登录源 / 听书等非文本类型。
+暂不支持：依赖 WebView / `java` 对象或登录态的复杂 `@js`、登录源、听书等非文本类型。
 
 ---
 
@@ -237,6 +239,7 @@ A: 已配置 `.gitignore`，勿提交 `node_modules/`、`out/`、`release/`、�
 
 近期变更（倒序）：
 
+- **2026-08-19 · v1.0.4** — 在线获取书源；TXT/EPUB 导入 worker 化 + zip bomb 防护；封面 BLOB 化；书源测试自动多关键词轮询；@js 沙箱执行；增量 UPSERT 存储；列表虚拟化；正文全宽铺满与滚动位置保持
 - **2026-08-18 · v1.0.3** — 阅读页正文全宽铺满；← / → 键盘翻章
 - **2026-08-17 · v1.0.2** — 书源按筛选导出 JSON；Windows 书源编辑弹窗按钮错位修复；默认国内镜像
 - **2026-08-15 · v1.0.1** — 网址净化、护眼提醒、书架上次阅读时间、侧栏短句、章节更新误报修复、Gitee 检查更新

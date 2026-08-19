@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import {
   EYE_CARE_INTERVAL_OPTIONS,
   REQUEST_CONCURRENCY_MAX,
@@ -12,7 +12,7 @@ import { eventToAccelerator, formatBossKeyLabel } from '../utils/bossKey'
 /**
  * 设置页：老板键、护眼提醒、阅读预加载、网络并发与正文净化规则。
  */
-export function SettingsView({
+export const SettingsView = memo(function SettingsView({
   settings,
   prefs,
   askConfirm,
@@ -215,4 +215,4 @@ export function SettingsView({
       )}
     </div>
   )
-}
+})

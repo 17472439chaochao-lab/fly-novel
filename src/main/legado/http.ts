@@ -7,10 +7,46 @@ export interface FetchOptions {
   charset?: string
   /** 请求超时毫秒数（默认 15000）。 */
   timeoutMs?: number
+  /** 调用方中止信号；与内部超时控制器合并，任一触发即中止在途 fetch。 */
+  signal?: AbortSignal
+}
+
+/**
+ * 非 2xx 响应错误：携带 HTTP 状态码，便于上层按源/字段优雅兜底。
+ * 3xx 已由 fetch 的 redirect:'follow' 处理，不会触发本错误。
+ */
+export class HttpError extends Error {
+  status: number
+  constructor(status: number, statusText: string, url: string) {
+    super(`HTTP ${status}${statusText ? ` ${statusText}` : ''}：${url}`)
+    this.name = 'HttpError'
+    this.status = status
+  }
 }
 
 const DEFAULT_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+/**
+ * 合并多个 AbortSignal：任一信号中止时返回的 signal 也中止，但不影响原信号本身。
+ * 用于把调用方的中止信号与内部超时控制器叠加，使在途 fetch 可被任一方中止。
+ * @param signals 待合并的信号（可含 undefined）
+ * @returns 合并后的新信号；若只有一个有效信号则直接返回它
+ */
+function mergeSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
+  const defined = signals.filter((s): s is AbortSignal => !!s)
+  if (defined.length <= 1) return defined[0] ?? new AbortController().signal
+  const merged = new AbortController()
+  const onAbort = () => merged.abort()
+  for (const s of defined) {
+    if (s.aborted) {
+      merged.abort()
+      break
+    }
+    s.addEventListener('abort', onAbort, { once: true })
+  }
+  return merged.signal
+}
 
 /**
  * 发起 HTTP 请求并将响应体按字符集解码为文本。
@@ -27,14 +63,15 @@ export async function fetchText(url: string, options: FetchOptions = {}): Promis
   }
 
   const timeoutMs = options.timeoutMs ?? 15000
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const timeoutController = new AbortController()
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs)
+  const signal = mergeSignals(timeoutController.signal, options.signal)
 
   const init: RequestInit = {
     method: (options.method || 'GET').toUpperCase(),
     headers,
     redirect: 'follow',
-    signal: controller.signal
+    signal
   }
 
   if (options.body && init.method !== 'GET' && init.method !== 'HEAD') {
@@ -46,12 +83,16 @@ export async function fetchText(url: string, options: FetchOptions = {}): Promis
 
   try {
     const res = await fetch(url, init)
+    if (!res.ok) {
+      throw new HttpError(res.status, res.statusText || '', res.url || url)
+    }
     const buf = Buffer.from(await res.arrayBuffer())
     const charset = options.charset || detectCharset(res.headers.get('content-type'), buf)
     const text = iconv.decode(buf, charset || 'utf-8')
     return { text, finalUrl: res.url || url }
   } catch (e) {
     if ((e as Error).name === 'AbortError') {
+      if (options.signal?.aborted) throw new Error(`请求已取消：${url}`)
       throw new Error(`请求超时（${timeoutMs}ms）：${url}`)
     }
     throw e
@@ -89,6 +130,112 @@ function normalizeCharset(c: string): string {
 }
 
 /**
+ * 安全求值 `{{(...)}}` 内的算术表达式：仅允许数字与 + - * / 括号，绑定 page/key。
+ * 不使用 `new Function` / `eval`，从根本上消除代码执行原语；任何非算术内容（如含 key 字符串）返回 null。
+ * @param expr - 括号表达式内部文本（已剥离外层括号）
+ * @param page - 当前页码
+ * @param key - 搜索关键词
+ * @returns 求值结果字符串；非法或含字符串绑定时返回 null
+ */
+function evalArithmeticExpr(expr: string, page: number, key: string): string | null {
+  type Token =
+    | { t: 'num'; v: number }
+    | { t: 'str'; v: string }
+    | { t: 'op'; v: string }
+
+  const tokens: Token[] = []
+  let i = 0
+  while (i < expr.length) {
+    const c = expr[i]
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+      i++
+      continue
+    }
+    if ((c >= '0' && c <= '9') || c === '.') {
+      let j = i
+      while (j < expr.length && /[0-9.]/.test(expr[j])) j++
+      const num = Number(expr.slice(i, j))
+      if (Number.isNaN(num)) return null
+      tokens.push({ t: 'num', v: num })
+      i = j
+      continue
+    }
+    if (/[a-zA-Z_]/.test(c)) {
+      let j = i
+      while (j < expr.length && /[a-zA-Z0-9_]/.test(expr[j])) j++
+      const word = expr.slice(i, j)
+      i = j
+      if (word === 'page') tokens.push({ t: 'num', v: page })
+      else if (word === 'key') tokens.push({ t: 'str', v: key })
+      else return null
+      continue
+    }
+    if ('+-*/()'.includes(c)) {
+      tokens.push({ t: 'op', v: c })
+      i++
+      continue
+    }
+    return null
+  }
+  if (!tokens.length) return null
+  // 含字符串绑定（key）的算术无意义，按原逻辑返回 null
+  if (tokens.some((tk) => tk.t === 'str')) return null
+
+  let pos = 0
+  const peek = (): Token | undefined => tokens[pos]
+  const parseExpr = (): number => {
+    let v = parseTerm()
+    while (peek() && peek()!.t === 'op' && (peek()!.v === '+' || peek()!.v === '-')) {
+      const op = (tokens[pos++] as { v: string }).v
+      const rhs = parseTerm()
+      v = op === '+' ? v + rhs : v - rhs
+    }
+    return v
+  }
+  const parseTerm = (): number => {
+    let v = parseFactor()
+    while (peek() && peek()!.t === 'op' && (peek()!.v === '*' || peek()!.v === '/')) {
+      const op = (tokens[pos++] as { v: string }).v
+      const rhs = parseFactor()
+      if (op === '*') v = v * rhs
+      else {
+        if (rhs === 0) return NaN
+        v = v / rhs
+      }
+    }
+    return v
+  }
+  const parseFactor = (): number => {
+    const tk = peek()
+    if (!tk) return NaN
+    if (tk.t === 'op' && tk.v === '-') {
+      pos++
+      return -parseFactor()
+    }
+    if (tk.t === 'op' && tk.v === '+') {
+      pos++
+      return parseFactor()
+    }
+    if (tk.t === 'op' && tk.v === '(') {
+      pos++
+      const v = parseExpr()
+      if (peek()?.t === 'op' && peek()?.v === ')') pos++
+      else return NaN
+      return v
+    }
+    if (tk.t === 'num') {
+      pos++
+      return tk.v
+    }
+    return NaN
+  }
+
+  const result = parseExpr()
+  if (Number.isNaN(result) || !Number.isFinite(result) || pos !== tokens.length) return null
+  return String(result)
+}
+
+/**
  * 解析 Legado searchUrl / 请求 URL。
  * 支持 `/path?q={{key}}` 以及 `/path,{"method":"POST",...}` 形式。
  * @param raw - 原始规则字符串
@@ -105,23 +252,9 @@ export function parseRequestUrl(
   }
 
   filled = filled.replace(/\{\{\(([^}]+)\)\}\}/g, (_, expr: string) => {
-    try {
-      const page = Number(vars.page ?? 1)
-      const key = String(vars.key ?? '')
-      const safe = expr.replace(/page/g, String(page)).replace(/key/g, JSON.stringify(key))
-      if (!/^[\d\s+\-*/().]+$/.test(safe.replace(/"/g, ''))) {
-        const numExpr = expr.replace(/page/g, String(page))
-        if (/^[\d\s+\-*/().]+$/.test(numExpr)) {
-          // eslint-disable-next-line no-new-func
-          return String(Function(`"use strict"; return (${numExpr});`)())
-        }
-        return ''
-      }
-      // eslint-disable-next-line no-new-func
-      return String(Function(`"use strict"; return (${safe});`)())
-    } catch {
-      return ''
-    }
+    const page = Number(vars.page ?? 1)
+    const key = String(vars.key ?? '')
+    return evalArithmeticExpr(expr, page, key) ?? ''
   })
 
   const comma = findOptionsComma(filled)

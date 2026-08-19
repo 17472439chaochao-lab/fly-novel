@@ -1,12 +1,14 @@
+import { memo } from 'react'
 import { authorLabel } from '../../../shared/author'
 import type { SearchBook, SearchProgress } from '../../../shared/types'
 import { IconClose, IconTrash, LoadingIcon, SearchIcon } from '../components/icons'
+import { VirtualList } from '../components/VirtualList'
 
 /**
  * 搜书页：多书源并发搜索、展示进度与结果，
  * 并管理搜索历史（点击重搜、单条删除、全部清空）。
  */
-export function SearchView({
+export const SearchView = memo(function SearchView({
   keyword,
   setKeyword,
   searching,
@@ -129,28 +131,35 @@ export function SearchView({
         ) : null}
 
         {results.length > 0 ? (
-          <div className="book-grid">
-            {results.map((b) => (
-              <button
-                type="button"
-                className="book-card"
-                key={`${b.origin}-${b.bookUrl}`}
-                onClick={() => onRead(b)}
-              >
-                {b.coverUrl ? (
-                  <img className="cover" src={b.coverUrl} alt="" />
-                ) : (
-                  <div className="cover placeholder">{b.name.slice(0, 1)}</div>
-                )}
-                <div className="book-meta">
-                  <h3>{b.name}</h3>
-                  <p>{authorLabel(b.author)}</p>
-                  <p>{b.originName}</p>
-                  {b.lastChapter ? <p className="muted">{b.lastChapter}</p> : null}
-                </div>
-              </button>
-            ))}
-          </div>
+          <VirtualList
+            grid
+            minColumnWidth={300}
+            gap={12}
+            estimateSize={104}
+            overscan={4}
+            style={{ flex: 1, minHeight: 0 }}
+            className="search-results"
+            count={results.length}
+            getItemKey={(i) => `${results[i].origin}-${results[i].bookUrl}`}
+            renderItem={(i) => {
+              const b = results[i]
+              return (
+                <button type="button" className="book-card" onClick={() => onRead(b)}>
+                  {b.coverUrl ? (
+                    <img className="cover" src={b.coverUrl} alt="" />
+                  ) : (
+                    <div className="cover placeholder">{b.name.slice(0, 1)}</div>
+                  )}
+                  <div className="book-meta">
+                    <h3>{b.name}</h3>
+                    <p>{authorLabel(b.author)}</p>
+                    <p>{b.originName}</p>
+                    {b.lastChapter ? <p className="muted">{b.lastChapter}</p> : null}
+                  </div>
+                </button>
+              )
+            }}
+          />
         ) : (
           <div className="empty">
             {searching ? '正在从各书源拉取结果，有结果会立即显示…' : '输入关键词开始搜索'}
@@ -159,4 +168,4 @@ export function SearchView({
       </div>
     </div>
   )
-}
+})

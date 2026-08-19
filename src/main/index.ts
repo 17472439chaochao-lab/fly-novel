@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, Menu, globalShortcut, nativeTheme } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
+import { promises as fsp } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from './utils'
 import * as store from './store'
@@ -7,15 +8,17 @@ import * as chapterDb from './chapterDb'
 import { closeDb, initDb } from './db'
 import { getBookInfo, getChapterList, getContent, normalizeSources, searchBooks, testSource, isSourceStructuralOk } from './legado/engine'
 import { fetchText } from './legado/http'
+import { BUILTIN_REPOS, fetchOnlineSources } from './legado/sourceRepo'
 import { mapPool, withTimeout } from './asyncPool'
 import { APP_ABOUT } from '../shared/about'
 import { ensureNovelParagraphs } from '../shared/novelText'
-import type { BookSource, ReaderSettings, SearchBook, ShelfBook } from '../shared/types'
+import type { BookSource, OnlineRepoRequest, ReaderSettings, SearchBook, ShelfBook } from '../shared/types'
 import { compareSourcesForSearch, speedTagFromRespondMs } from '../shared/types'
 import { isLocalBook } from '../shared/bookLocal'
 import { filterRelevantSearchHits, titleSimilarity, scoreSearchMatchSample, blendMatchScore } from '../shared/searchRelevance'
 import { matchChapterIndex } from '../shared/matchChapter'
 import { importLocalBookDialogAsync } from './localBooks/importLocal'
+import { migrateLegacyDataUrlCovers } from './localBooks/covers'
 import { exportShelfBookToTxt } from './localBooks/exportTxt'
 import { listSystemFontFamilies } from './systemFonts'
 import { checkGiteeUpdate } from './updateCheck'
@@ -64,6 +67,7 @@ function readAppVersion(): string {
 const APP_VERSION = readAppVersion()
 
 const cacheJobs = new Map<string, AbortController>()
+const preloadJobs = new Map<string, AbortController>()
 let registeredBossKey = ''
 let bossHidden = false
 
@@ -416,7 +420,7 @@ function registerIpc(): void {
     })
     if (canceled || !filePaths[0]) return { ok: false, message: '已取消' }
     try {
-      const raw = readFileSync(filePaths[0], 'utf-8')
+      const raw = await fsp.readFile(filePaths[0], 'utf-8')
       return importFromParsed(JSON.parse(raw) as unknown)
     } catch (e) {
       return { ok: false, message: `导入失败：${(e as Error).message}` }
@@ -442,6 +446,47 @@ function registerIpc(): void {
     }
   })
 
+  // 列出内置在线书源仓库（面板展示用）
+  ipcMain.handle('sources:repoList', () => BUILTIN_REPOS)
+
+  // 从在线书源仓库获取并导入书源（可选限定仓库，缺省全部内置）
+  ipcMain.handle('sources:fetchOnline', async (e, repos?: OnlineRepoRequest[]) => {
+    const sender = e.sender
+    const list =
+      Array.isArray(repos) && repos.length
+        ? repos
+        : BUILTIN_REPOS.map((r) => ({ id: r.id }))
+    try {
+      const { sources, errors, stats } = await fetchOnlineSources(list, (p) => {
+        if (!sender.isDestroyed()) sender.send('sources:fetch-online-progress', p)
+      })
+      if (!sources.length) {
+        return {
+          ok: false,
+          message: `在线获取失败：${(errors.slice(0, 3).join('；') || '未获取到有效书源').slice(0, 200)}`,
+          sources: store.getSources()
+        }
+      }
+      const result = store.importSources(sources)
+      const parts = [`新增 ${result.added}`]
+      if (result.skipped) parts.push(`已存在跳过 ${result.skipped}`)
+      if (stats.reposFail) parts.push(`${stats.reposFail} 个仓库获取失败`)
+      return {
+        ok: true,
+        message: `在线获取完成：${parts.join('，')}`,
+        sources: store.getSources(),
+        added: result.added,
+        skipped: result.skipped
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        message: `在线获取失败：${(err as Error).message}`,
+        sources: store.getSources()
+      }
+    }
+  })
+
   // 导出书源为 Legado 兼容 JSON（可按 URL 列表限定范围）
   ipcMain.handle('sources:exportFile', async (e, urls?: string[]) => {
     const all = store.getSources()
@@ -463,7 +508,7 @@ function registerIpc(): void {
 
     try {
       const payload = list.map(toExportableSource)
-      writeFileSync(save.filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      await fsp.writeFile(save.filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
       return {
         ok: true,
         message: `已导出 ${list.length} 个书源`,
@@ -502,7 +547,7 @@ function registerIpc(): void {
   ipcMain.handle('sources:test', async (_e, url: string, keyword?: string) => {
     const source = findSource(url)
     if (!source) throw new Error('书源不存在')
-    const result = await testSource(source, keyword)
+    const result = await testSource(source, keyword, store.getSearchHistory())
     const sources = store.patchSource(url, {
       flyTestStatus: result.ok ? 'ok' : 'fail',
       flyTestMessage: result.message,
@@ -519,6 +564,7 @@ function registerIpc(): void {
     const all = store.getSources()
     const urlSet = Array.isArray(urls) && urls.length ? new Set(urls) : null
     const list = urlSet ? all.filter((s) => urlSet.has(s.bookSourceUrl)) : all
+    const history = store.getSearchHistory()
     const total = list.length
     const sender = e.sender
     sender.send('sources:test-progress', { done: 0, total, current: '', phase: 'start' })
@@ -534,7 +580,7 @@ function registerIpc(): void {
     const outcomes = await mapPool(list, CONCURRENCY, async (s) => {
       try {
         const result = await withTimeout(
-          testSource(s, keyword),
+          testSource(s, keyword, history),
           TEST_TIMEOUT_MS,
           `书源「${s.bookSourceName}」测试超时`
         )
@@ -628,6 +674,7 @@ function registerIpc(): void {
     let found = 0
     const orderedBooks: SearchBook[] = []
     const matchSamples = new Map<string, number>()
+    const recoveredUrls = new Map<string, string>()
     const CONCURRENCY = store.getRequestConcurrency()
     const SEARCH_TIMEOUT_MS = 12000
 
@@ -644,6 +691,7 @@ function registerIpc(): void {
         found += books.length
         if (books.length) {
           orderedBooks.push(...books)
+          recoveredUrls.set(s.bookSourceUrl, books[0].name)
           sender.send('books:search-partial', books)
         }
         sender.send('books:search-progress', {
@@ -669,15 +717,23 @@ function registerIpc(): void {
       }
     })
 
-    if (matchSamples.size) {
+    if (matchSamples.size || recoveredUrls.size) {
+      const now = Date.now()
       const nextSources = store.getSources().map((s) => {
         const sample = matchSamples.get(s.bookSourceUrl)
-        if (sample == null) return s
-        return {
-          ...s,
-          flyMatchScore: blendMatchScore(s.flyMatchScore, sample),
-          flyMatchSamples: (s.flyMatchSamples || 0) + 1
+        const hitName = recoveredUrls.get(s.bookSourceUrl)
+        if (sample == null && !hitName) return s
+        const next: BookSource = { ...s }
+        if (sample != null) {
+          next.flyMatchScore = blendMatchScore(s.flyMatchScore, sample)
+          next.flyMatchSamples = (s.flyMatchSamples || 0) + 1
         }
+        if (hitName && s.flyTestStatus === 'fail') {
+          next.flyTestStatus = 'ok'
+          next.flyTestMessage = `搜索「${key}」命中《${hitName}》，已自动恢复可用`
+          next.flyTestAt = now
+        }
+        return next
       })
       store.saveSources(nextSources)
     }
@@ -772,21 +828,40 @@ function registerIpc(): void {
       }
       const source = findSource(origin)
       if (!source) return Array.from(chapterDb.listCachedUrls(bookId))
+
+      // 中止该书上一轮在途预加载
+      preloadJobs.get(bookId)?.abort()
+      const controller = new AbortController()
+      preloadJobs.set(bookId, controller)
+
       const already = chapterDb.listCachedUrls(bookId)
       const pending = chapterUrls.filter((u) => u && !already.has(u))
       if (pending.length) {
         await mapPool(pending, store.getRequestConcurrency(), async (url) => {
+          if (controller.signal.aborted) return
           try {
-            const content = await withTimeout(getContent(source, url), 12000, '预加载超时')
+            const content = await withTimeout(
+              getContent(source, url, { signal: controller.signal }),
+              12000,
+              '预加载超时'
+            )
+            if (controller.signal.aborted) return
             if (content) chapterDb.setChapterContent(bookId, url, content)
           } catch {
             /* 跳过失败预加载 */
           }
         })
       }
+      preloadJobs.delete(bookId)
       return Array.from(chapterDb.listCachedUrls(bookId))
     }
   )
+
+  // 取消指定书籍的预加载
+  ipcMain.handle('books:cancelPreload', (_e, bookId: string) => {
+    preloadJobs.get(bookId)?.abort()
+    preloadJobs.delete(bookId)
+  })
 
   // 获取书架列表
   ipcMain.handle('shelf:list', () => enrichShelf(store.getShelf()))
@@ -932,7 +1007,7 @@ function registerIpc(): void {
         }
         try {
           const content = await withTimeout(
-            getContent(source, ch.url),
+            getContent(source, ch.url, { signal: controller.signal }),
             12000,
             `《${book!.name}》章节超时`
           )
@@ -1108,6 +1183,7 @@ app.whenReady().then(() => {
   initDb()
   store.ensureDefaultConfig()
   chapterDb.initChapterDb()
+  migrateLegacyDataUrlCovers()
   applyAppTheme(store.getSettings().theme || 'paper')
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

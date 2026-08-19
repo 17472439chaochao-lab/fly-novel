@@ -1,8 +1,9 @@
 import * as cheerio from 'cheerio'
-import type { Element } from 'domhandler'
+import type { AnyNode } from 'domhandler'
 import { JSONPath } from 'jsonpath-plus'
 import { DOMParser } from '@xmldom/xmldom'
 import xpath from 'xpath'
+import { evalJsRule, evalJsRuleToStrings } from './jsRule'
 
 export type AnalyzeMode = 'Default' | 'XPath' | 'Json' | 'Regex' | 'Js'
 
@@ -32,6 +33,21 @@ function detectMode(rule: string, content: string): AnalyzeMode {
   }
   if (isJsonLike(content) && (r.includes('$.') || r.startsWith('$'))) return 'Json'
   return 'Default'
+}
+
+/**
+ * 去掉 @js 规则的 @js: 或 <js>…</js> 前缀，返回可执行的 JS 文本。
+ * @param rule - 原始规则
+ * @returns 去掉前缀后的 JS 文本
+ */
+function stripJsPrefix(rule: string): string {
+  const r = rule.trim()
+  if (r.startsWith('@js:')) return r.slice(4).trim()
+  if (r.startsWith('<js>')) {
+    const end = r.indexOf('</js>')
+    return (end >= 0 ? r.slice(4, end) : r.slice(4)).trim()
+  }
+  return r
 }
 
 /**
@@ -91,14 +107,8 @@ function applyRegexChain(value: string, regexes: string[]): string {
     const replacement = regexes[i + 1] ?? ''
     if (!pattern) continue
     try {
-      const re = new RegExp(pattern, 'g')
-      if (replacement === '' || replacement === null) {
-        result = result.replace(re, '')
-      } else if (replacement.startsWith('$')) {
-        result = result.replace(re, replacement)
-      } else {
-        result = result.replace(re, replacement)
-      }
+      // replacement 为空时等价于删除；非空时 String.replace 原生支持 $1/$& 等反向引用
+      result = result.replace(new RegExp(pattern, 'g'), replacement)
     } catch {
       /* 忽略非法正则 */
     }
@@ -131,7 +141,7 @@ function absoluteUrl(base: string, href: string): string {
  */
 function getFromCheerio(
   $: cheerio.CheerioAPI,
-  el: cheerio.Cheerio<Element>,
+  el: cheerio.Cheerio<AnyNode>,
   getType: string,
   baseUrl: string
 ): string {
@@ -188,10 +198,10 @@ function toCheerioSelector(selector: string): string {
  * @param selector - 选择器字符串
  * @returns 匹配的 cheerio 集合
  */
-function selectByCss($: cheerio.CheerioAPI, root: cheerio.Cheerio<Element> | null, selector: string) {
+function selectByCss($: cheerio.CheerioAPI, root: cheerio.Cheerio<AnyNode> | null, selector: string) {
   if (selector.startsWith('text.')) {
     const needle = selector.slice(5)
-    const scope = root && root.length ? root : $.root()
+    const scope = (root && root.length ? root : $.root()) as cheerio.Cheerio<AnyNode>
     const matched = scope.find('*').filter((_, el) => $(el).text().includes(needle))
     const filtered = matched.filter((_, el) => {
       return $(el).find('*').filter((__, child) => $(child).text().includes(needle)).length === 0
@@ -369,6 +379,16 @@ export function getElements(content: string, rule: string | undefined): string[]
       return []
     }
   }
+  if (mode === 'Js') {
+    try {
+      const v = evalJsRule(stripJsPrefix(rule), { result: content })
+      if (Array.isArray(v)) return v.map((x) => (x == null ? '' : String(x)))
+      if (v != null) return [String(v)]
+      return []
+    } catch {
+      return []
+    }
+  }
   const $ = cheerio.load(content)
   const { selector } = parseRuleParts(rule)
   const nodes = selectByCss($, null, selector)
@@ -462,7 +482,11 @@ export function getStringList(
       } else if (mode === 'XPath') {
         result = analyzeXPath(content, alt, baseUrl, single)
       } else if (mode === 'Js') {
-        result = []
+        try {
+          result = evalJsRuleToStrings(stripJsPrefix(alt), { result: content, baseUrl })
+        } catch {
+          result = []
+        }
       } else {
         result = analyzeCss(content, alt, baseUrl, single)
       }

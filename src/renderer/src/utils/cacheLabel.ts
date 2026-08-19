@@ -4,14 +4,14 @@ import type { ShelfBook } from '../../../shared/types'
 /**
  * 生成书架条目上的缓存状态徽章文案与样式类名。
  * @param b 书架书籍
- * @param cacheBusyId 当前正在缓存的书籍 id，无则 null
- * @param cacheProgress 缓存进度展示字符串
+ * @param cacheBusyIds 当前正在缓存的书籍 id 列表
+ * @param cacheProgressMap 按书籍 id 记录的缓存进度展示字符串
  * @returns text 为展示文案，cls 为 CSS 类名
  */
 export function cacheLabel(
   b: ShelfBook,
-  cacheBusyId: string | null,
-  cacheProgress: string
+  cacheBusyIds: string[],
+  cacheProgressMap: Record<string, string>
 ): {
   text: string
   cls: string
@@ -20,10 +20,11 @@ export function cacheLabel(
     const fmt = (b.localFormat || b.kind || '本地').toString().toUpperCase()
     return { text: `本地 · ${fmt}`, cls: 'cache-badge local' }
   }
-  const caching = cacheBusyId === b.id || b.cache?.status === 'caching'
+  const caching = cacheBusyIds.includes(b.id) || b.cache?.status === 'caching'
   if (caching) {
+    const progress = cacheProgressMap[b.id] || ''
     return {
-      text: cacheProgress ? `缓存中 ${cacheProgress}` : '缓存中…',
+      text: progress ? `缓存中 ${progress}` : '缓存中…',
       cls: 'cache-badge caching'
     }
   }

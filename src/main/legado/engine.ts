@@ -3,6 +3,7 @@ import { ensureNovelParagraphs, normalizeLineEndings } from '../../shared/novelT
 import { isSourceStructuralOk } from '../../shared/sourceValidity'
 import { getElements, getString } from './analyzeRule'
 import { fetchText, parseRequestUrl, resolveUrl } from './http'
+import { withTimeout } from '../asyncPool'
 
 export { isSourceStructuralOk }
 
@@ -218,14 +219,24 @@ export async function getChapterList(source: BookSource, tocUrl: string): Promis
 }
 
 /**
- * 抓取章节正文（支持分页 nextContentUrl，最多 20 页）。
+ * 在途章节正文请求合并：key = `${bookSourceUrl}::${chapterUrl}`。
+ * 同一 key 的并发调用共享同一个 Promise，避免整本缓存与导出 TXT 同时拉同一章发重复请求。
+ * 首个调用方的 signal 透传给 fetchText 以真正中止在途 fetch；后续合并方仅用各自 signal 竞速。
+ */
+const inflightContent = new Map<string, Promise<string>>()
+
+/**
+ * 抓取章节正文（内部实现，不合并）。
+ * 支持分页 nextContentUrl，最多 20 页。
  * @param source - 书源
  * @param chapterUrl - 章节 URL
+ * @param signal - 可选中止信号，透传给 fetchText
  * @returns 合并后的小说正文
  */
-export async function getContent(
+async function doGetContent(
   source: BookSource,
-  chapterUrl: string
+  chapterUrl: string,
+  signal?: AbortSignal
 ): Promise<string> {
   const headers = parseHeader(source.header)
   const rule = source.ruleContent
@@ -241,7 +252,7 @@ export async function getContent(
     if (seen.has(nextUrl)) break
     seen.add(nextUrl)
 
-    const { text, finalUrl } = await fetchText(nextUrl, { headers })
+    const { text, finalUrl } = await fetchText(nextUrl, { headers, signal })
     let html = text
     if (rule.sourceRegex) {
       try {
@@ -287,6 +298,47 @@ export async function getContent(
 }
 
 /**
+ * 抓取章节正文（支持分页 nextContentUrl，最多 20 页）。
+ * 同一书源+章节URL的并发请求自动合并（in-flight coalescing），避免重复请求。
+ * @param source - 书源
+ * @param chapterUrl - 章节 URL
+ * @param options - 可选 { signal } 中止信号
+ * @returns 合并后的小说正文
+ */
+export function getContent(
+  source: BookSource,
+  chapterUrl: string,
+  options?: { signal?: AbortSignal }
+): Promise<string> {
+  const key = `${source.bookSourceUrl}::${chapterUrl}`
+  const signal = options?.signal
+
+  // 合并：同 key 在途请求直接共享 Promise
+  const existing = inflightContent.get(key)
+  if (existing) {
+    if (!signal) return existing
+    if (signal.aborted) return Promise.reject(new Error(`请求已取消：${chapterUrl}`))
+    return Promise.race([
+      existing,
+      new Promise<never>((_, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => reject(new Error(`请求已取消：${chapterUrl}`)),
+          { once: true }
+        )
+      })
+    ])
+  }
+
+  // 首个调用方：透传 signal 给 fetchText 以真正中止在途 fetch
+  const promise = doGetContent(source, chapterUrl, signal).finally(() => {
+    inflightContent.delete(key)
+  })
+  inflightContent.set(key, promise)
+  return promise
+}
+
+/**
  * 规范化导入的书源 JSON：过滤无效项，仅保留文本书源。
  * @param input - 单个或数组形式的原始对象
  * @returns 合法书源数组
@@ -308,21 +360,68 @@ export function normalizeSources(input: unknown): BookSource[] {
   return result
 }
 
+/** 测试关键词候选上限：超过上限会显著拖长疑似失效源的测试耗时 */
+const MAX_TEST_KEYWORDS = 3
+/** 单源测试总预算：疑似失效源在预算内依次尝试全部候选词 */
+const TEST_BUDGET_MS = 12_000
+/** 单个候选词搜索上限 */
+const TEST_PER_KEY_MS = 8_000
+/** 内置热门词兜底池：搜索历史缺失时的备用候选 */
+const TEST_KEYWORD_FALLBACKS = ['剑来', '遮天', '斗破苍穹', '完美世界', '庆余年', '雪中悍刀行']
+
+/**
+ * 生成书源测试的关键词候选序列。
+ * 优先级：显式测试词 → 规则 checkKeyWord → 最近搜索历史（用户真实在找的书）→ 内置热门词。
+ * 去重并截断到 MAX_TEST_KEYWORDS 个。首个关键词搜不到时自动换词，
+ * 避免「剑来」这类固定测试词搜不到就误判整源失效。
+ * @param source - 书源
+ * @param keyword - 用户显式传入的测试词（设置页配置）
+ * @param history - 最近搜索历史（新到旧）
+ * @returns 去重后的候选关键词列表
+ */
+export function buildTestKeywords(
+  source: BookSource,
+  keyword?: string,
+  history: string[] = []
+): string[] {
+  const list: string[] = []
+  const push = (k?: string): void => {
+    const t = (k || '').trim()
+    if (t && !list.includes(t)) list.push(t)
+  }
+  push(keyword)
+  push(source.ruleSearch?.checkKeyWord)
+  for (const h of history) {
+    if (list.length >= MAX_TEST_KEYWORDS) break
+    push(h)
+  }
+  for (const f of TEST_KEYWORD_FALLBACKS) {
+    if (list.length >= MAX_TEST_KEYWORDS) break
+    push(f)
+  }
+  return list.slice(0, MAX_TEST_KEYWORDS)
+}
+
 /**
  * 用关键词实测书源搜索是否可用。
+ * 依次尝试候选词（见 buildTestKeywords），任一关键词搜到结果即判定可用；
+ * 全部候选词均失败才判定不可用，避免单个关键词冷门导致的误判。
  * @param source - 书源
- * @param keyword - 可选测试词；缺省用规则 checkKeyWord 或「剑来」
- * @returns 是否成功、说明、命中数、耗时与结构校验结果
+ * @param keyword - 可选显式测试词
+ * @param history - 可选最近搜索历史，作为自动替换的关键词来源
+ * @returns 是否成功、说明、命中数、耗时、结构校验结果与命中的关键词
  */
 export async function testSource(
   source: BookSource,
-  keyword?: string
+  keyword?: string,
+  history: string[] = []
 ): Promise<{
   ok: boolean
   message: string
   found: number
   respondMs: number
   structuralOk: boolean
+  hitKeyword?: string
 }> {
   const structuralOk = isSourceStructuralOk(source)
   if (!structuralOk) {
@@ -335,37 +434,36 @@ export async function testSource(
     }
   }
 
-  const key =
-    keyword?.trim() ||
-    source.ruleSearch?.checkKeyWord?.trim() ||
-    '剑来'
+  const keys = buildTestKeywords(source, keyword, history)
   const started = Date.now()
-  try {
-    const books = await searchBooks(source, key, 1)
-    const respondMs = Date.now() - started
-    if (!books.length) {
-      return {
-        ok: false,
-        message: `搜索「${key}」无结果`,
-        found: 0,
-        respondMs,
-        structuralOk: true
+  let lastMessage = `搜索「${keys[0]}」无结果`
+  for (const key of keys) {
+    const remaining = TEST_BUDGET_MS - (Date.now() - started)
+    if (remaining <= 0) break
+    const budget = Math.min(TEST_PER_KEY_MS, remaining)
+    try {
+      const books = await withTimeout(searchBooks(source, key, 1), budget, `搜索「${key}」超时`)
+      if (books.length) {
+        return {
+          ok: true,
+          message: `搜索「${key}」找到 ${books.length} 本，例如《${books[0].name}》`,
+          found: books.length,
+          respondMs: Date.now() - started,
+          structuralOk: true,
+          hitKeyword: key
+        }
       }
+      lastMessage = `搜索「${key}」无结果`
+    } catch (e) {
+      lastMessage = (e as Error).message || `搜索「${key}」失败`
     }
-    return {
-      ok: true,
-      message: `搜索「${key}」找到 ${books.length} 本，例如《${books[0].name}》`,
-      found: books.length,
-      respondMs,
-      structuralOk: true
-    }
-  } catch (e) {
-    return {
-      ok: false,
-      message: (e as Error).message || '请求失败',
-      found: 0,
-      respondMs: Date.now() - started,
-      structuralOk: true
-    }
+  }
+  const tried = keys.map((k) => `「${k}」`).join('、')
+  return {
+    ok: false,
+    message: keys.length > 1 ? `尝试 ${tried} 均失败（${lastMessage}）` : lastMessage,
+    found: 0,
+    respondMs: Date.now() - started,
+    structuralOk: true
   }
 }

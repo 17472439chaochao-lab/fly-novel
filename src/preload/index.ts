@@ -4,10 +4,13 @@ import type {
   BookCacheInfo,
   BookCacheProgress,
   BookSource,
+  OnlineFetchProgress,
+  OnlineRepoRequest,
   ReaderSettings,
   SearchBook,
   SearchProgress,
   ShelfBook,
+  SourceRepoMeta,
   SourceTestResult
 } from '../shared/types'
 import type { UpdateCheckResult } from '../shared/updateCheck'
@@ -69,6 +72,33 @@ const api = {
         count?: number
         path?: string
       }>,
+    /**
+     * 列出内置在线书源仓库元数据（面板展示用）
+     */
+    repoList: () => ipcRenderer.invoke('sources:repoList') as Promise<SourceRepoMeta[]>,
+    /**
+     * 从在线书源仓库获取并自动导入书源
+     * @param repos 可选，限定要获取的仓库（内置 id 或自定义 URL）；缺省获取全部内置仓库
+     */
+    fetchOnline: (repos?: OnlineRepoRequest[]) =>
+      ipcRenderer.invoke('sources:fetchOnline', repos) as Promise<{
+        ok: boolean
+        message: string
+        sources?: BookSource[]
+        added?: number
+        skipped?: number
+      }>,
+    /**
+     * 订阅在线获取书源进度事件
+     * @param cb 进度回调
+     * @returns 取消订阅函数
+     */
+    onFetchOnlineProgress: (cb: (p: OnlineFetchProgress) => void) => {
+      /** 将主进程进度事件转发给回调 */
+      const listener = (_: IpcRendererEvent, p: OnlineFetchProgress) => cb(p)
+      ipcRenderer.on('sources:fetch-online-progress', listener)
+      return () => ipcRenderer.removeListener('sources:fetch-online-progress', listener)
+    },
     /**
      * 启用或禁用指定书源
      * @param url 书源 URL
@@ -199,7 +229,10 @@ const api = {
      * @param chapterUrls 待预加载的章节 URL 列表
      */
     preload: (origin: string, bookId: string, chapterUrls: string[]) =>
-      ipcRenderer.invoke('books:preload', origin, bookId, chapterUrls) as Promise<string[]>
+      ipcRenderer.invoke('books:preload', origin, bookId, chapterUrls) as Promise<string[]>,
+    /** 取消指定书籍的在途预加载 */
+    cancelPreload: (bookId: string) =>
+      ipcRenderer.invoke('books:cancelPreload', bookId) as Promise<void>
   },
   shelf: {
     /** 获取书架全部书籍 */

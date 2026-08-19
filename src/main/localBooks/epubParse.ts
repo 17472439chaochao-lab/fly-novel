@@ -14,6 +14,55 @@ export type EpubMeta = {
 }
 
 /**
+ * zip bomb 防护上限（对合法 EPUB 足够宽松，对恶意压缩包直接拒绝）。
+ * - 条目总数：正常 EPUB 通常 < 2000
+ * - 单条目解压后上限 256MB（EPUB 正文/图片不会到这个量级）
+ * - 总解压后上限 1GB
+ * - 压缩比上限 500:1 且仅对 >4MB 的条目生效（重复文本的合法大文件也不会误伤）
+ * - 单章 HTML 读取上限 12MB
+ */
+const MAX_ZIP_ENTRIES = 50_000
+const MAX_ENTRY_UNCOMPRESSED = 256 * 1024 * 1024
+const MAX_TOTAL_UNCOMPRESSED = 1024 * 1024 * 1024
+const MAX_COMPRESSION_RATIO = 500
+const MIN_RATIO_ENTRY_SIZE = 4 * 1024 * 1024
+const MAX_HTML_READ = 12 * 1024 * 1024
+const MAX_COVER_READ = 2_500_000
+
+/** JSZip 内部压缩条目元数据（跨 3.x 稳定），用于解压前预检。 */
+type ZipEntryMeta = {
+  _data?: { compressedSize?: number; uncompressedSize?: number }
+}
+
+/**
+ * 校验 zip 条目元数据，拒绝 zip bomb：
+ * 条目数、单条目解压大小、压缩比、总解压大小。
+ * @param zip - 已 loadAsync 的 zip 实例
+ */
+function guardZipBomb(zip: JSZip): void {
+  const files = Object.values(zip.files) as (JSZip.JSZipObject & ZipEntryMeta)[]
+  if (files.length > MAX_ZIP_ENTRIES) {
+    throw new Error(`EPUB 条目数异常（${files.length}），已拒绝导入`)
+  }
+  let total = 0
+  for (const f of files) {
+    if (f.dir) continue
+    const u = f._data?.uncompressedSize ?? 0
+    const c = f._data?.compressedSize ?? 0
+    if (u > MAX_ENTRY_UNCOMPRESSED) {
+      throw new Error(`EPUB 条目过大：${f.name}`)
+    }
+    if (u > MIN_RATIO_ENTRY_SIZE && c > 0 && u / c > MAX_COMPRESSION_RATIO) {
+      throw new Error(`EPUB 条目压缩比异常：${f.name}`)
+    }
+    total += u
+    if (total > MAX_TOTAL_UNCOMPRESSED) {
+      throw new Error('EPUB 解压总量超过限制，已拒绝导入')
+    }
+  }
+}
+
+/**
  * 解析 EPUB 缓冲，提取书名、作者、章节正文与可选封面。
  * @param buf - EPUB 文件二进制
  * @param fallbackTitle - 缺省书名
@@ -21,7 +70,8 @@ export type EpubMeta = {
  */
 export async function parseEpubBuffer(buf: Buffer, fallbackTitle: string): Promise<EpubMeta> {
   const zip = await JSZip.loadAsync(buf)
-  const containerXml = await readZipText(zip, 'META-INF/container.xml')
+  guardZipBomb(zip)
+  const containerXml = await readZipTextLimited(zip, 'META-INF/container.xml', MAX_HTML_READ)
   if (!containerXml) throw new Error('无效的 EPUB：缺少 META-INF/container.xml')
 
   const containerDoc = parseXml(containerXml)
@@ -32,7 +82,7 @@ export async function parseEpubBuffer(buf: Buffer, fallbackTitle: string): Promi
 
   const opfPath = rootfile.replace(/\\/g, '/')
   const opfDir = dirname(opfPath)
-  const opfXml = await readZipText(zip, opfPath)
+  const opfXml = await readZipTextLimited(zip, opfPath, MAX_HTML_READ)
   if (!opfXml) throw new Error(`无效的 EPUB：无法读取 ${opfPath}`)
 
   const opf = parseXml(opfXml)
@@ -73,7 +123,7 @@ export async function parseEpubBuffer(buf: Buffer, fallbackTitle: string): Promi
     const item = manifest.get(id)
     if (!item) continue
     if (!isHtmlMedia(item.mediaType, item.href)) continue
-    const html = await readZipText(zip, item.href)
+    const html = await readZipTextLimited(zip, item.href, MAX_HTML_READ)
     if (!html) continue
     const content = htmlToPlainText(html)
     if (!content.trim()) continue
@@ -156,8 +206,8 @@ async function extractCoverDataUrl(
     })()
   if (!file || file.dir) return undefined
 
-  const buf = Buffer.from(await file.async('uint8array'))
-  if (!buf.length || buf.length > 2_500_000) return undefined
+  const buf = await readZipFileLimited(file, MAX_COVER_READ)
+  if (!buf || !buf.length) return undefined
 
   let mime = coverItem.mediaType || ''
   if (!mime.startsWith('image/')) {
@@ -199,14 +249,14 @@ async function loadTocTitles(
     const href = el.getAttribute('href') || ''
     if (!href) continue
     if (props.split(/\s+/).includes('nav')) {
-      const html = await readZipText(zip, resolvePath(opfDir, href))
+      const html = await readZipTextLimited(zip, resolvePath(opfDir, href), MAX_HTML_READ)
       if (html) parseNavXhtml(html, opfDir, href, map)
     }
   }
 
   for (const item of Array.from(manifest.values())) {
     if (item.mediaType === 'application/x-dtbncx+xml' || /\.ncx$/i.test(item.href)) {
-      const ncx = await readZipText(zip, item.href)
+      const ncx = await readZipTextLimited(zip, item.href, MAX_HTML_READ)
       if (ncx) parseNcx(ncx, dirname(item.href), map)
     }
   }
@@ -306,12 +356,30 @@ function isHtmlMedia(mediaType: string, href: string): boolean {
 }
 
 /**
- * 从 zip 中读取文本文件（支持大小写不敏感回退）。
+ * 从 zip 中读取文本文件（大小写不敏感回退 + 大小上限保护）。
  * @param zip - JSZip 实例
  * @param path - zip 内路径
- * @returns 文本内容；不存在返回 null
+ * @param maxBytes - 解压后大小上限
+ * @returns 文本内容；不存在或超限返回 null
  */
-async function readZipText(zip: JSZip, path: string): Promise<string | null> {
+async function readZipTextLimited(
+  zip: JSZip,
+  path: string,
+  maxBytes: number
+): Promise<string | null> {
+  const file = findZipFile(zip, path)
+  if (!file) return null
+  const buf = await readZipFileLimited(file, maxBytes)
+  return buf ? buf.toString('utf8') : null
+}
+
+/**
+ * 按路径查找 zip 条目（支持大小写不敏感回退）。
+ * @param zip - JSZip 实例
+ * @param path - zip 内路径
+ * @returns 条目；不存在返回 null
+ */
+function findZipFile(zip: JSZip, path: string): JSZip.JSZipObject | null {
   const normalized = path.replace(/^\/+/, '')
   let file = zip.file(normalized)
   if (!file) {
@@ -321,7 +389,62 @@ async function readZipText(zip: JSZip, path: string): Promise<string | null> {
     if (key) file = zip.file(key)
   }
   if (!file || file.dir) return null
-  return file.async('text')
+  return file
+}
+
+/**
+ * 流式读取 zip 条目二进制，超过 maxBytes 立即中断并返回 null。
+ * 先按内部元数据快速拒绝，再用 nodeStream 逐块累计，双保险防解压炸弹。
+ * @param file - zip 条目
+ * @param maxBytes - 大小上限
+ * @returns 二进制内容；超限返回 null
+ */
+async function readZipFileLimited(
+  file: JSZip.JSZipObject,
+  maxBytes: number
+): Promise<Buffer | null> {
+  // 元数据预检：已知解压大小直接拒绝，避免解压
+  const meta = (file as JSZip.JSZipObject & ZipEntryMeta)._data
+  if (meta?.uncompressedSize != null && meta.uncompressedSize > maxBytes) return null
+
+  return new Promise<Buffer | null>((resolve) => {
+    let stream: NodeJS.ReadableStream & { destroy?: () => void }
+    try {
+      stream = file.nodeStream() as NodeJS.ReadableStream & { destroy?: () => void }
+    } catch {
+      resolve(null)
+      return
+    }
+    const chunks: Buffer[] = []
+    let total = 0
+    let settled = false
+    const fail = () => {
+      if (settled) return
+      settled = true
+      stream.destroy?.()
+      resolve(null)
+    }
+    stream.on('data', (chunk: Buffer | string) => {
+      if (settled) return
+      const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      total += b.length
+      if (total > maxBytes) {
+        fail()
+        return
+      }
+      chunks.push(b)
+    })
+    stream.on('end', () => {
+      if (settled) return
+      settled = true
+      resolve(Buffer.concat(chunks))
+    })
+    stream.on('error', () => {
+      if (settled) return
+      settled = true
+      resolve(null)
+    })
+  })
 }
 
 /**

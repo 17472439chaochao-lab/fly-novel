@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { isLocalBook } from '../../../shared/bookLocal'
 import { isSourceStructuralOk } from '../../../shared/sourceValidity'
 import {
@@ -8,12 +8,16 @@ import {
   sourceSpeedLabel,
   sourceSpeedTag,
   type BookSource,
-  type ShelfBook
+  type OnlineFetchProgress,
+  type OnlineRepoRequest,
+  type ShelfBook,
+  type SourceRepoMeta
 } from '../../../shared/types'
 import {
   IconBroom,
   IconCheck,
   IconClose,
+  IconDownload,
   IconEdit,
   IconExport,
   IconImport,
@@ -22,12 +26,13 @@ import {
   IconTrash,
   LoadingIcon
 } from '../components/icons'
+import { formatProgressLabel, runWithProgress } from '../utils/progress'
 
 /**
  * 书源管理页：筛选/统计书源，支持文件与 URL 导入、
  * 启用切换、单测/批量测试、编辑 JSON、删除无效源等。
  */
-export function SourcesView({
+export const SourcesView = memo(function SourcesView({
   sources,
   shelf,
   testKeyword,
@@ -63,6 +68,12 @@ export function SourcesView({
   const [editText, setEditText] = useState('')
   const [importUrl, setImportUrl] = useState('')
   const [importingUrl, setImportingUrl] = useState(false)
+  const [onlineOpen, setOnlineOpen] = useState(false)
+  const [onlineRepos, setOnlineRepos] = useState<SourceRepoMeta[]>([])
+  const [selectedRepoIds, setSelectedRepoIds] = useState<string[]>([])
+  const [customUrl, setCustomUrl] = useState('')
+  const [onlineFetching, setOnlineFetching] = useState(false)
+  const [onlineProgress, setOnlineProgress] = useState<OnlineFetchProgress | null>(null)
   const [filter, setFilter] = useState<
     'all' | 'enabled' | 'disabled' | 'ok' | 'fail' | 'structuralBad' | 'untested'
   >('all')
@@ -145,6 +156,86 @@ export function SourcesView({
     }
   }
 
+  /** 打开在线获取面板：首次拉取内置仓库列表并默认全选 */
+  async function openOnlinePanel() {
+    setOnlineProgress(null)
+    setOnlineOpen(true)
+    if (onlineRepos.length) return
+    try {
+      const repos = await window.fly.sources.repoList()
+      setOnlineRepos(repos)
+      setSelectedRepoIds(repos.map((r) => r.id))
+    } catch {
+      /* 仓库列表拉取失败时仍可打开面板，用自定义 URL 获取 */
+    }
+  }
+
+  /** 勾选或取消勾选内置仓库 */
+  function toggleRepo(id: string) {
+    setSelectedRepoIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
+
+  /** 把自定义 URL 追加为 auto 类型仓库并默认选中 */
+  function addCustomRepo() {
+    const url = customUrl.trim()
+    if (!/^https?:\/\//i.test(url)) {
+      showToast('请输入以 http:// 或 https:// 开头的书源地址')
+      return
+    }
+    if (onlineRepos.some((r) => r.url === url)) {
+      showToast('该地址已在列表中')
+      return
+    }
+    let host = 'URL'
+    try {
+      host = new URL(url).host || 'URL'
+    } catch {
+      /* 保持默认 */
+    }
+    const repo: SourceRepoMeta = {
+      id: `custom-${onlineRepos.length + 1}`,
+      name: `自定义源 ${host}`,
+      desc: '用户自定义书源地址（自动识别 JSON 或订阅列表）',
+      kind: 'auto',
+      url
+    }
+    setOnlineRepos((prev) => [...prev, repo])
+    setSelectedRepoIds((prev) => [...prev, repo.id])
+    setCustomUrl('')
+  }
+
+  /** 从选中的仓库在线获取并自动导入书源 */
+  async function onFetchOnline() {
+    if (onlineFetching) return
+    const requests: OnlineRepoRequest[] = onlineRepos
+      .filter((r) => selectedRepoIds.includes(r.id))
+      .map((r) => ({ id: r.id, name: r.name, kind: r.kind, url: r.url, alt: r.alt }))
+    if (!requests.length) {
+      showToast('请至少选择一个书源仓库')
+      return
+    }
+    setOnlineFetching(true)
+    setOnlineProgress(null)
+    try {
+      const res = await runWithProgress(
+        (track) => {
+          track(window.fly.sources.onFetchOnlineProgress((p) => setOnlineProgress(p)))
+        },
+        () => window.fly.sources.fetchOnline(requests)
+      )
+      if (res.sources) onSourcesChange(res.sources)
+      showToast(res.message)
+      if (res.ok) setOnlineOpen(false)
+    } catch (e) {
+      showToast(`在线获取失败：${(e as Error).message}`)
+    } finally {
+      setOnlineFetching(false)
+      setOnlineProgress(null)
+    }
+  }
+
   /**
    * 确认后删除单个书源
    * @param url 书源 URL
@@ -187,15 +278,13 @@ export function SourcesView({
     const filterLabel = filterItems.find((f) => f.id === filter)?.label || '当前'
     setTestingAll(true)
     setTestProgress(`0/${urls.length}`)
-    const off = window.fly.sources.onTestProgress((p) => {
-      setTestProgress(
-        p.phase === 'done'
-          ? '完成'
-          : `${p.done}/${p.total}${p.current ? ` · ${p.current}` : ''}`
-      )
-    })
     try {
-      const next = await window.fly.sources.testAll(testKeyword, urls)
+      const next = await runWithProgress(
+        (track) => {
+          track(window.fly.sources.onTestProgress((p) => setTestProgress(formatProgressLabel(p))))
+        },
+        () => window.fly.sources.testAll(testKeyword, urls)
+      )
       onSourcesChange(next)
       const tested = next.filter((s) => urls.includes(s.bookSourceUrl))
       const ok = tested.filter((s) => s.flyTestStatus === 'ok').length
@@ -204,7 +293,6 @@ export function SourcesView({
     } catch (e) {
       showToast(`批量测试失败：${(e as Error).message}`)
     } finally {
-      off()
       setTestingAll(false)
       setTestProgress('')
     }
@@ -303,10 +391,16 @@ export function SourcesView({
           <h2>书源管理</h2>
           <p>匹配度高的书源会优先参与搜索（含书架常用源），不单看速度标签</p>
         </div>
-        <button className="btn" onClick={onImportFile}>
-          <IconImport />
-          从文件导入
-        </button>
+        <div className="panel-actions">
+          <button className="btn" onClick={() => void openOnlinePanel()}>
+            <IconDownload />
+            在线获取
+          </button>
+          <button className="btn ghost" onClick={onImportFile}>
+            <IconImport />
+            从文件导入
+          </button>
+        </div>
       </div>
 
       <div className="stats-bar" role="tablist" aria-label="书源筛选">
@@ -390,7 +484,23 @@ export function SourcesView({
       </div>
 
       {!sources.length ? (
-        <div className="empty">尚未导入书源</div>
+        <div className="empty-guide">
+          <h3>还没有书源</h3>
+          <p>
+            书源是搜索小说的「数据源」。可以直接从公开维护的书源仓库在线获取，
+            也可以导入自己收藏的书源文件（兼容 Legado 格式）。
+          </p>
+          <div className="empty-actions">
+            <button className="btn" onClick={() => void openOnlinePanel()}>
+              <IconDownload />
+              在线获取书源
+            </button>
+            <button className="btn ghost" onClick={onImportFile}>
+              <IconImport />
+              从文件导入
+            </button>
+          </div>
+        </div>
       ) : !filteredSources.length ? (
         <div className="empty">当前筛选下没有书源</div>
       ) : (
@@ -470,6 +580,102 @@ export function SourcesView({
         </div>
       )}
 
+      {onlineOpen ? (
+        <div className="modal-backdrop" onClick={() => !onlineFetching && setOnlineOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>在线获取书源</h3>
+              <button
+                className="btn ghost icon-btn"
+                title="关闭"
+                disabled={onlineFetching}
+                onClick={() => setOnlineOpen(false)}
+              >
+                <IconClose />
+              </button>
+            </div>
+
+            <div className="repo-list">
+              {onlineRepos.length ? (
+                onlineRepos.map((r) => (
+                  <label
+                    className={`repo-row${selectedRepoIds.includes(r.id) ? ' on' : ''}`}
+                    key={r.id}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedRepoIds.includes(r.id)}
+                      onChange={() => toggleRepo(r.id)}
+                      disabled={onlineFetching}
+                    />
+                    <span className="repo-info">
+                      <strong>{r.name}</strong>
+                      <small>{r.desc}</small>
+                      <code>{r.url}</code>
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <div className="repo-empty">内置仓库列表加载失败，可添加自定义地址获取</div>
+              )}
+            </div>
+
+            <div className="import-url-row">
+              <input
+                value={customUrl}
+                onChange={(e) => setCustomUrl(e.target.value)}
+                placeholder="自定义仓库 URL（书源 JSON 或订阅列表）"
+                disabled={onlineFetching}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addCustomRepo()
+                }}
+              />
+              <button
+                className="btn ghost"
+                disabled={!customUrl.trim() || onlineFetching}
+                onClick={addCustomRepo}
+              >
+                <IconLink />
+                添加
+              </button>
+            </div>
+
+            {onlineProgress ? (
+              <div className="online-progress">
+                <LoadingIcon />
+                <span>
+                  {onlineProgress.phase === 'start'
+                    ? `正在获取「${onlineProgress.repoName}」…`
+                    : onlineProgress.ok
+                      ? `「${onlineProgress.repoName}」完成`
+                      : `「${onlineProgress.repoName}」获取失败`}
+                  （{onlineProgress.done}/{onlineProgress.total}，已命中 {onlineProgress.found} 个）
+                </span>
+              </div>
+            ) : null}
+
+            <div className="modal-actions">
+              <button
+                className="btn ghost"
+                disabled={onlineFetching}
+                onClick={() => setOnlineOpen(false)}
+              >
+                <IconClose />
+                取消
+              </button>
+              <button
+                className="btn"
+                disabled={onlineFetching || !selectedRepoIds.length}
+                onClick={() => void onFetchOnline()}
+              >
+                {onlineFetching ? <LoadingIcon /> : <IconDownload />}
+                {onlineFetching ? '获取中…' : `获取并导入（${selectedRepoIds.length}）`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {editing ? (
         <div className="modal-backdrop" onClick={() => setEditing(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -510,4 +716,4 @@ export function SourcesView({
       ) : null}
     </div>
   )
-}
+})

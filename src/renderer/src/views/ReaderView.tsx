@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { authorName } from '../../../shared/author'
 import { applyPurify } from '../../../shared/purify'
 import { ensureNovelParagraphs } from '../../../shared/novelText'
@@ -22,7 +22,7 @@ const CHAPTER_ROW_HEIGHT = 36
  * 阅读页：侧栏虚拟目录、正文滚动与进度持久化、
  * 主题/字体设置、自动滚屏，以及选中文字加入净化。
  */
-export function ReaderView({
+export const ReaderView = memo(function ReaderView({
   book,
   chapters,
   content,
@@ -53,6 +53,7 @@ export function ReaderView({
 }) {
   const chapter = chapters[book.chapterIndex]
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const [tocOpen, setTocOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [systemFonts, setSystemFonts] = useState<string[]>([])
@@ -61,6 +62,9 @@ export function ReaderView({
   const chapterListRef = useRef<VirtualListHandle | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const skipScrollSaveRef = useRef(false)
+  const skipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 当前阅读位置在正文中的比例（0..1），窗口尺寸/目录开关引发重排后按它恢复滚动位置 */
+  const ratioRef = useRef(0)
   const pendingScrollRef = useRef(book.scrollTop || 0)
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const latestScrollRef = useRef(book.scrollTop || 0)
@@ -104,6 +108,22 @@ export function ReaderView({
     onScrollSaveRef.current(latestScrollRef.current)
   }
 
+  /** 重排（窗口缩放/全屏/目录开关改变行宽）后，按上次阅读比例恢复滚动位置，避免内容视觉跳变 */
+  function restoreScrollFromRatio() {
+    const el = scrollRef.current
+    if (!el) return
+    const max = el.scrollHeight - el.clientHeight
+    const target = max > 0 ? Math.round(ratioRef.current * max) : 0
+    skipScrollSaveRef.current = true
+    el.scrollTop = target
+    latestScrollRef.current = target
+    if (skipTimerRef.current) clearTimeout(skipTimerRef.current)
+    skipTimerRef.current = setTimeout(() => {
+      skipScrollSaveRef.current = false
+      skipTimerRef.current = null
+    }, 120)
+  }
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -129,6 +149,21 @@ export function ReaderView({
       window.removeEventListener('scroll', close, true)
     }
   }, [])
+
+  useLayoutEffect(() => {
+    /** 菜单实测尺寸后夹紧在窗口内，避免超出窗口边界 */
+    if (!menu) return
+    const el = menuRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const pad = 8
+    const maxX = Math.max(pad, window.innerWidth - rect.width - pad)
+    const maxY = Math.max(pad, window.innerHeight - rect.height - pad)
+    const x = Math.min(Math.max(menu.x, pad), maxX)
+    const y = Math.min(Math.max(menu.y, pad), maxY)
+    if (x === menu.x && y === menu.y) return
+    setMenu((m) => (m ? { ...m, x, y } : m))
+  }, [menu])
 
   useEffect(() => {
     if (!settingsOpen || systemFonts.length > 0 || fontsLoading) return
@@ -209,6 +244,19 @@ export function ReaderView({
     chapterListRef.current?.scrollToIndex(book.chapterIndex, 'center')
   }, [book.chapterIndex, chapters.length, book.id, tocOpen])
 
+  useEffect(() => {
+    /** 窗口尺寸变化（含全屏）会改变正文行宽导致重排，按阅读比例恢复滚动位置避免内容跳变 */
+    const onResize = () => requestAnimationFrame(restoreScrollFromRatio)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    /** 目录开/关带 280ms 折叠动画，期间行宽渐变重排；动画结束后按比例恢复 */
+    const t = window.setTimeout(restoreScrollFromRatio, 340)
+    return () => window.clearTimeout(t)
+  }, [tocOpen])
+
   // 加载中记录目标滚动位置，正文渲染后再恢复
   useEffect(() => {
     if (loading) {
@@ -225,6 +273,8 @@ export function ReaderView({
     const top = pendingScrollRef.current || 0
     el.scrollTop = top
     latestScrollRef.current = top
+    const max = el.scrollHeight - el.clientHeight
+    ratioRef.current = max > 0 ? top / max : 0
     const t = window.setTimeout(() => {
       skipScrollSaveRef.current = false
     }, 80)
@@ -234,6 +284,7 @@ export function ReaderView({
   useEffect(() => {
     return () => {
       if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current)
+      if (skipTimerRef.current) clearTimeout(skipTimerRef.current)
       onScrollSaveRef.current(latestScrollRef.current)
     }
   }, [])
@@ -445,8 +496,11 @@ export function ReaderView({
           }}
           onScroll={(e) => {
             if (skipScrollSaveRef.current) return
-            const top = (e.currentTarget as HTMLDivElement).scrollTop
+            const el = e.currentTarget as HTMLDivElement
+            const top = el.scrollTop
             latestScrollRef.current = top
+            const max = el.scrollHeight - el.clientHeight
+            ratioRef.current = max > 0 ? top / max : 0
             if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current)
             scrollSaveTimer.current = setTimeout(() => {
               scrollSaveTimer.current = null
@@ -491,6 +545,7 @@ export function ReaderView({
 
       {menu ? (
         <div
+          ref={menuRef}
           className="ctx-menu"
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}
@@ -510,4 +565,4 @@ export function ReaderView({
       ) : null}
     </div>
   )
-}
+})

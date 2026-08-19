@@ -1,4 +1,4 @@
-import { writeFileSync } from 'fs'
+import { promises as fsp } from 'fs'
 import { basename } from 'path'
 import { BrowserWindow, dialog } from 'electron'
 import type { Chapter, ShelfBook } from '../../shared/types'
@@ -156,7 +156,7 @@ export async function exportShelfBookToTxt(
   const text = lines.join('\n').replace(/\n{4,}/g, '\n\n\n')
   const payload = `\uFEFF${text}`
   try {
-    writeFileSync(save.filePath, payload, 'utf8')
+    await fsp.writeFile(save.filePath, payload, 'utf8')
   } catch (e) {
     return { ok: false, message: `写入失败：${(e as Error).message}` }
   }

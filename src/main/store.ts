@@ -15,15 +15,21 @@ import { blendMatchScore } from '../shared/searchRelevance'
 import { isLocalBook } from '../shared/bookLocal'
 import { isLegacyPresetFont, platformDefaultFontFamily } from '../shared/fonts'
 import { getDb } from './db'
+import { attachCover, deleteCover, persistCover } from './localBooks/covers'
 
 /**
  * 去掉书架书籍上的运行时 cache 字段，避免持久化。
+ * 同时把 data URL 封面抽离到 book_covers 表，返回可落库的副本。
  * @param book - 书架书籍
- * @returns 不含 cache 的副本
+ * @returns 不含 cache、封面已归档的副本
  */
 function stripCacheField(book: ShelfBook): ShelfBook {
   const { cache: _c, ...rest } = book
-  return rest
+  const coverUrl = persistCover(rest.id, rest.coverUrl)
+  const next: ShelfBook = { ...rest }
+  if (coverUrl) next.coverUrl = coverUrl
+  else delete next.coverUrl
+  return next
 }
 
 /**
@@ -84,21 +90,36 @@ export function getSources(): BookSource[] {
 }
 
 /**
- * 全量替换保存书源列表。
- * @param sources - 新书源列表
+ * 增量保存书源：仅 UPSERT 数据/排序有变化的行，并删除不再存在的行。
+ * 相比全表 DELETE + INSERT，书源多时的小改动（开关、测试、匹配分）只写个别行。
+ * @param sources - 完整书源列表（数组顺序即 sort_order）
  */
 export function saveSources(sources: BookSource[]): void {
   const database = getDb()
-  const clear = database.prepare('DELETE FROM sources')
-  const insert = database.prepare(
-    'INSERT INTO sources (book_source_url, data, sort_order) VALUES (?, ?, ?)'
+  const upsert = database.prepare(
+    `INSERT INTO sources (book_source_url, data, sort_order) VALUES (?, ?, ?)
+     ON CONFLICT(book_source_url) DO UPDATE SET
+       data = excluded.data,
+       sort_order = excluded.sort_order
+     WHERE sources.data IS NOT excluded.data
+        OR sources.sort_order IS NOT excluded.sort_order`
   )
+  const remove = database.prepare('DELETE FROM sources WHERE book_source_url = ?')
   const tx = database.transaction((list: BookSource[]) => {
-    clear.run()
+    const existing = (
+      database.prepare('SELECT book_source_url FROM sources').all() as {
+        book_source_url: string
+      }[]
+    ).map((r) => r.book_source_url)
+    const incoming = new Set<string>()
     list.forEach((s, i) => {
       if (!s.bookSourceUrl) return
-      insert.run(s.bookSourceUrl, JSON.stringify(s), i)
+      incoming.add(s.bookSourceUrl)
+      upsert.run(s.bookSourceUrl, JSON.stringify(s), i)
     })
+    for (const url of existing) {
+      if (!incoming.has(url)) remove.run(url)
+    }
   })
   tx(sources)
 }
@@ -133,25 +154,40 @@ export function getShelf(): ShelfBook[] {
   const rows = getDb()
     .prepare('SELECT data FROM shelf_books ORDER BY sort_order ASC, updated_at DESC')
     .all() as { data: string }[]
-  return rows.map((r) => stripCacheField(JSON.parse(r.data) as ShelfBook))
+  return rows.map((r) => attachCover(stripCacheField(JSON.parse(r.data) as ShelfBook)))
 }
 
 /**
- * 全量替换保存书架。
- * @param shelf - 书架列表
+ * 增量保存书架：仅 UPSERT 数据/排序/时间戳有变化的行，并删除不再存在的行。
+ * 相比全表 DELETE + INSERT，书架书多时的单本更新只写那一行。
+ * @param shelf - 完整书架列表（数组顺序即 sort_order）
  */
 export function saveShelf(shelf: ShelfBook[]): void {
   const database = getDb()
-  const clear = database.prepare('DELETE FROM shelf_books')
-  const insert = database.prepare(
-    'INSERT INTO shelf_books (id, data, sort_order, updated_at) VALUES (?, ?, ?, ?)'
+  const upsert = database.prepare(
+    `INSERT INTO shelf_books (id, data, sort_order, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       data = excluded.data,
+       sort_order = excluded.sort_order,
+       updated_at = excluded.updated_at
+     WHERE shelf_books.data IS NOT excluded.data
+        OR shelf_books.sort_order IS NOT excluded.sort_order
+        OR shelf_books.updated_at IS NOT excluded.updated_at`
   )
+  const remove = database.prepare('DELETE FROM shelf_books WHERE id = ?')
   const tx = database.transaction((list: ShelfBook[]) => {
-    clear.run()
+    const existing = (
+      database.prepare('SELECT id FROM shelf_books').all() as { id: string }[]
+    ).map((r) => r.id)
+    const incoming = new Set<string>()
     list.forEach((b, i) => {
       const clean = stripCacheField(b)
-      insert.run(clean.id, JSON.stringify(clean), i, clean.updatedAt || Date.now())
+      incoming.add(clean.id)
+      upsert.run(clean.id, JSON.stringify(clean), i, clean.updatedAt || Date.now())
     })
+    for (const id of existing) {
+      if (!incoming.has(id)) remove.run(id)
+    }
   })
   tx(shelf)
 }
@@ -173,12 +209,14 @@ export function upsertShelfBook(book: ShelfBook): ShelfBook[] {
       .prepare('UPDATE shelf_books SET data = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(clean), clean.updatedAt || Date.now(), clean.id)
   } else {
-    database.prepare('UPDATE shelf_books SET sort_order = sort_order + 1').run()
+    // 新书排最前：取当前最小 sort_order 再减一，避免整表 sort_order + 1 的 O(N) 平移
+    const minRow = database.prepare('SELECT MIN(sort_order) AS m FROM shelf_books').get() as {
+      m: number | null
+    }
+    const sortOrder = minRow.m == null ? 0 : minRow.m - 1
     database
-      .prepare(
-        'INSERT INTO shelf_books (id, data, sort_order, updated_at) VALUES (?, ?, 0, ?)'
-      )
-      .run(clean.id, JSON.stringify(clean), clean.updatedAt || Date.now())
+      .prepare('INSERT INTO shelf_books (id, data, sort_order, updated_at) VALUES (?, ?, ?, ?)')
+      .run(clean.id, JSON.stringify(clean), sortOrder, clean.updatedAt || Date.now())
   }
   return getShelf()
 }
@@ -208,7 +246,7 @@ export function patchShelfProgress(
   database
     .prepare('UPDATE shelf_books SET data = ?, updated_at = ? WHERE id = ?')
     .run(JSON.stringify(book), book.updatedAt, id)
-  return book
+  return attachCover(book)
 }
 
 /**
@@ -217,6 +255,7 @@ export function patchShelfProgress(
  * @returns 更新后的书架
  */
 export function removeShelfBook(id: string): ShelfBook[] {
+  deleteCover(id)
   getDb().prepare('DELETE FROM shelf_books WHERE id = ?').run(id)
   return getShelf()
 }

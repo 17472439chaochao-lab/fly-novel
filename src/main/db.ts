@@ -16,6 +16,8 @@ export function getDb(): Database.Database {
   db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  // 多连接（导入 worker 等）同时写库时避免 SQLITE_BUSY
+  db.pragma('busy_timeout = 5000')
   db.exec(`
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
@@ -43,6 +45,12 @@ export function getDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS search_history (
       keyword TEXT PRIMARY KEY,
       searched_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS book_covers (
+      book_id TEXT PRIMARY KEY,
+      mime TEXT NOT NULL,
+      data BLOB NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS chapters (

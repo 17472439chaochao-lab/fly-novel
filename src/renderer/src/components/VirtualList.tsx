@@ -1,11 +1,12 @@
 import {
+  forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  forwardRef,
   type CSSProperties,
   type ReactNode
 } from 'react'
@@ -18,18 +19,63 @@ export type VirtualListHandle = {
 /** 虚拟列表组件属性 */
 export type VirtualListProps = {
   count: number
-  /** 固定行高；行高略有差异时作为估算高度 */
+  /** 估算/统一行高；列表模式会按实测高度校正，网格模式作为统一行高 */
   estimateSize: number
   overscan?: number
   className?: string
   style?: CSSProperties
   getItemKey?: (index: number) => string | number
   renderItem: (index: number) => ReactNode
+  /** 网格模式：按 minColumnWidth 自动计算列数并虚拟化（适合等高卡片） */
+  grid?: boolean
+  /** 网格列最小宽度（像素），默认 300 */
+  minColumnWidth?: number
+  /** 单元间距（像素）；列表为行间距，网格为纵向行间距，默认 0 */
+  gap?: number
+}
+
+/** 单个虚拟单元：绝对定位并按内容实测高度，避免换行内容重叠 */
+function MeasuredUnit({
+  unitKey,
+  offset,
+  children,
+  onMeasure
+}: {
+  unitKey: string | number
+  offset: number
+  children: ReactNode
+  onMeasure: (key: string | number, height: number) => void
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const h = el.getBoundingClientRect().height
+    if (h > 0) onMeasure(unitKey, h)
+  })
+  return (
+    <div
+      ref={ref}
+      className="virtual-list-item"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        transform: `translateY(${offset}px)`
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
 /**
- * 固定行高虚拟列表：仅渲染可视区域及 overscan 范围内的行，
- * 通过绝对定位 + translateY 放置条目，并暴露 scrollToIndex。
+ * 虚拟化列表 / 网格：
+ * - 仅渲染可视区域及 overscan 范围内的单元，通过绝对定位 + translateY 放置。
+ * - 列表模式（grid 缺省）按内容实测高度（动态行高），长标题换行不会溢出重叠。
+ * - 网格模式按固定列宽自动计算列数，按行带（band）虚拟化，适合等高卡片。
+ * 暴露 scrollToIndex 句柄（列表按条目、网格按条目换算到所在行带）。
  */
 export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(function VirtualList(
   {
@@ -39,19 +85,29 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(funct
     className,
     style,
     getItemKey,
-    renderItem
+    renderItem,
+    grid = false,
+    minColumnWidth = 300,
+    gap = 0
   },
   ref
 ) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  const [contentWidth, setContentWidth] = useState(0)
+  /** 各单元实测高度；缺测时回退 estimateSize */
+  const heightsRef = useRef<Map<string | number, number>>(new Map())
+  const [heightsTick, setHeightsTick] = useState(0)
 
   useEffect(() => {
     const el = scrollerRef.current
     if (!el) return
-    /** 同步滚动容器视口高度到 state */
-    const sync = () => setViewportHeight(el.clientHeight)
+    /** 同步滚动容器视口高度/宽度到 state */
+    const sync = () => {
+      setViewportHeight(el.clientHeight)
+      setContentWidth(el.clientWidth)
+    }
     sync()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null
     ro?.observe(el)
@@ -69,62 +125,115 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(funct
     setScrollTop(el.scrollTop)
   }, [])
 
-  const totalHeight = Math.max(0, count * estimateSize)
+  /** 实测高度回调：仅在高度变化（>0.5px）时更新，避免无谓重渲染 */
+  const onMeasure = useCallback((key: string | number, h: number) => {
+    const prev = heightsRef.current.get(key)
+    if (prev === undefined || Math.abs(prev - h) > 0.5) {
+      heightsRef.current.set(key, h)
+      setHeightsTick((n) => n + 1)
+    }
+  }, [])
+
+  const columns = grid
+    ? Math.max(1, Math.floor((contentWidth + gap) / (minColumnWidth + gap)) || 1)
+    : 1
+  const unitCount = grid ? Math.ceil(count / columns) : count
+
+  /** 前缀和高度（offsets），用于二分定位可见区间 */
+  const offsets = useMemo(() => {
+    const arr = new Array(unitCount + 1)
+    arr[0] = 0
+    for (let i = 0; i < unitCount; i++) {
+      const key = grid ? `band-${i}` : getItemKey ? getItemKey(i) : i
+      const h = heightsRef.current.get(key) ?? estimateSize
+      arr[i + 1] = arr[i] + h + (i < unitCount - 1 ? gap : 0)
+    }
+    return arr
+    // heightsTick 触发重算；getItemKey 变化也纳入
+  }, [unitCount, estimateSize, gap, grid, getItemKey, heightsTick])
+
+  const totalHeight = offsets[unitCount] ?? 0
 
   const { start, end } = useMemo(() => {
-    if (count <= 0 || viewportHeight <= 0) {
+    if (unitCount <= 0 || viewportHeight <= 0) {
       return { start: 0, end: 0 }
     }
-    const rawStart = Math.floor(scrollTop / estimateSize)
-    const visible = Math.ceil(viewportHeight / estimateSize)
-    const s = Math.max(0, rawStart - overscan)
-    const e = Math.min(count, rawStart + visible + overscan)
+    // 二分：首个满足 offsets[i] <= scrollTop 的单元索引
+    let lo = 0
+    let hi = unitCount - 1
+    let first = 0
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (offsets[mid] <= scrollTop) {
+        first = mid
+        lo = mid + 1
+      } else {
+        hi = mid - 1
+      }
+    }
+    const s = Math.max(0, first - overscan)
+    let e = first
+    while (e < unitCount && offsets[e] < scrollTop + viewportHeight) e++
+    e = Math.min(unitCount, e + overscan)
     return { start: s, end: e }
-  }, [count, estimateSize, overscan, scrollTop, viewportHeight])
+  }, [unitCount, offsets, overscan, scrollTop, viewportHeight])
 
   useImperativeHandle(
     ref,
     () => ({
       /**
-       * 滚动到指定索引行
-       * @param index 目标行索引
+       * 滚动到指定索引（条目）行；网格模式会换算到所在行带
+       * @param index 目标条目索引
        * @param align 对齐方式：顶部 / 居中 / 底部
        */
       scrollToIndex(index: number, align: 'start' | 'center' | 'end' = 'center') {
         const el = scrollerRef.current
         if (!el || count <= 0) return
-        const i = Math.max(0, Math.min(count - 1, index))
-        const itemTop = i * estimateSize
-        let next = itemTop
+        const unitIndex = grid ? Math.floor(index / columns) : index
+        const i = Math.max(0, Math.min(unitCount - 1, unitIndex))
+        const unitTop = offsets[i]
+        const unitH = offsets[i + 1] - offsets[i]
+        let next = unitTop
         if (align === 'center') {
-          next = itemTop - el.clientHeight / 2 + estimateSize / 2
+          next = unitTop - el.clientHeight / 2 + unitH / 2
         } else if (align === 'end') {
-          next = itemTop - el.clientHeight + estimateSize
+          next = unitTop - el.clientHeight + unitH
         }
         el.scrollTop = Math.max(0, Math.min(totalHeight - el.clientHeight, next))
       }
     }),
-    [count, estimateSize, totalHeight]
+    [count, columns, grid, unitCount, offsets, totalHeight]
   )
 
-  const items: ReactNode[] = []
+  const units: ReactNode[] = []
   for (let i = start; i < end; i++) {
-    const key = getItemKey ? getItemKey(i) : i
-    items.push(
-      <div
-        key={key}
-        className="virtual-list-item"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: estimateSize,
-          transform: `translateY(${i * estimateSize}px)`
-        }}
-      >
-        {renderItem(i)}
-      </div>
+    const unitKey = grid ? `band-${i}` : getItemKey ? getItemKey(i) : i
+    const offset = offsets[i]
+    units.push(
+      <MeasuredUnit key={unitKey} unitKey={unitKey} offset={offset} onMeasure={onMeasure}>
+        {grid ? (
+          <div
+            className="virtual-list-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+              gap: `${gap}px`
+            }}
+          >
+            {Array.from({ length: Math.min(columns, count - i * columns) }, (_, k) => {
+              const itemIndex = i * columns + k
+              const itemKey = getItemKey ? getItemKey(itemIndex) : itemIndex
+              return (
+                <div key={itemKey} className="virtual-list-grid-cell">
+                  {renderItem(itemIndex)}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          renderItem(i)
+        )}
+      </MeasuredUnit>
     )
   }
 
@@ -136,7 +245,7 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(funct
       onScroll={onScroll}
     >
       <div className="virtual-list-spacer" style={{ height: totalHeight, position: 'relative' }}>
-        {items}
+        {units}
       </div>
     </div>
   )

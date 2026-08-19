@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { APP_ABOUT } from '../../../shared/about'
 import type { ConfirmOutcome } from '../components/ConfirmDialog'
 
 /**
  * 关于页：展示应用信息，并提供「检查更新」（Gitee Releases 轻量提示，不自动安装）。
  */
-export function AboutView({
+export const AboutView = memo(function AboutView({
   showToast,
   askConfirm
 }: {
@@ -17,7 +17,7 @@ export function AboutView({
     cancelText?: string
   }) => Promise<ConfirmOutcome>
 }) {
-  const [version, setVersion] = useState(APP_ABOUT.version)
+  const [version, setVersion] = useState<string>(APP_ABOUT.version)
   const [checking, setChecking] = useState(false)
 
   useEffect(() => {
@@ -113,4 +113,4 @@ export function AboutView({
       </div>
     </div>
   )
-}
+})

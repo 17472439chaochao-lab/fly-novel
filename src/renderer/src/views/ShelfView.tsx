@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { authorLabel, authorName } from '../../../shared/author'
 import { isLocalBook } from '../../../shared/bookLocal'
 import type { ShelfBook, ShelfSort } from '../../../shared/types'
 import { ShelfCover } from '../components/ShelfCover'
+import { VirtualList } from '../components/VirtualList'
 import {
   IconDownload,
   IconExport,
@@ -20,12 +21,12 @@ import { formatLastReadLabel } from '../utils/formatLastRead'
  * 书架页：展示书籍列表（可排序），并提供打开、导入本地、
  * 更新、换源、缓存、导出 TXT、移除等操作入口。
  */
-export function ShelfView({
+export const ShelfView = memo(function ShelfView({
   shelf,
   sort,
-  busyId,
-  cacheBusyId,
-  cacheProgress,
+  busyIds,
+  cacheBusyIds,
+  cacheProgressMap,
   updatingAll,
   updateProgress,
   onOpen,
@@ -42,9 +43,9 @@ export function ShelfView({
 }: {
   shelf: ShelfBook[]
   sort: ShelfSort
-  busyId: string | null
-  cacheBusyId: string | null
-  cacheProgress: string
+  busyIds: string[]
+  cacheBusyIds: string[]
+  cacheProgressMap: Record<string, string>
   updatingAll: boolean
   updateProgress: string
   onOpen: (b: ShelfBook) => void
@@ -75,7 +76,7 @@ export function ShelfView({
   }, [shelf, sort])
 
   return (
-    <div>
+    <div className="shelf-view">
       <div className="panel-head">
         <div>
           <h2>我的书架</h2>
@@ -100,7 +101,7 @@ export function ShelfView({
           </button>
           <button
             className="btn ghost"
-            disabled={!onlineCount || updatingAll || !!busyId}
+            disabled={!onlineCount || updatingAll}
             onClick={onUpdateAll}
           >
             {updatingAll ? <LoadingIcon /> : <IconRefresh />}
@@ -115,15 +116,23 @@ export function ShelfView({
       {!shelf.length ? (
         <div className="empty">书架空空如也</div>
       ) : (
-        <div className="shelf-list">
-          {sortedShelf.map((b) => {
+        <VirtualList
+          className="shelf-virtual"
+          style={{ flex: 1, minHeight: 0 }}
+          count={sortedShelf.length}
+          estimateSize={96}
+          gap={8}
+          overscan={8}
+          getItemKey={(i) => sortedShelf[i].id}
+          renderItem={(i) => {
+            const b = sortedShelf[i]
             const local = isLocalBook(b)
-            const busy = busyId === b.id
-            const caching = !local && (cacheBusyId === b.id || b.cache?.status === 'caching')
-            const locked = busy || !!busyId || updatingAll || (!!cacheBusyId && !caching)
-            const badge = cacheLabel(b, cacheBusyId, cacheProgress)
+            const busy = busyIds.includes(b.id)
+            const caching = !local && (cacheBusyIds.includes(b.id) || b.cache?.status === 'caching')
+            const locked = busy || updatingAll
+            const badge = cacheLabel(b, cacheBusyIds, cacheProgressMap)
             return (
-              <div className="shelf-row" key={b.id}>
+              <div className="shelf-row">
                 <button className="book-item" onClick={() => onOpen(b)}>
                   <ShelfCover book={b} />
                   <div className="book-meta">
@@ -205,9 +214,9 @@ export function ShelfView({
                 </div>
               </div>
             )
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   )
-}
+})
